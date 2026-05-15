@@ -1,6 +1,15 @@
 import React, { useEffect } from 'react';
 import {
   COMPANY_DISPLAY_NAME,
+  COMPANY_EXPANSION_NOTE,
+  COMPANY_MISSION,
+  COMPANY_PHILGEPS_NOTE,
+  COMPANY_PRODUCTS,
+  COMPANY_SERVICE_AREAS,
+  COMPANY_SERVICES,
+  COMPANY_STORY_INTRO,
+  COMPANY_VALUES,
+  COMPANY_VISION,
   FACEBOOK_BUSINESS_PAGE_URL,
   PUBLIC_SITE_HOST,
 } from '../lib/company';
@@ -14,8 +23,8 @@ import {
   Gauge,
   MapPin,
 } from 'lucide-react';
-import landingHeroUrl from '../src/assets/landing-hero.png';
 import { LandingBookingSection } from './LandingBookingSection';
+import { LandingHeroVideo } from './LandingHeroVideo';
 
 /** Services bento — mechanic / engine bay (Unsplash). */
 const SERVICE_MECHANIC_BG =
@@ -89,14 +98,14 @@ export const PublicLanding: React.FC = () => {
               <a className={navItem} href="#services">
                 Services
               </a>
-              <a className={navItem} href="#inventory">
-                Inventory
+              <a className={navItem} href="#products">
+                Products
               </a>
-              <a className={navItem} href="#why-us">
-                Why us
+              <a className={navItem} href="#about">
+                About
               </a>
-              <a className={navItem} href="#reviews">
-                Reviews
+              <a className={navItem} href="#vision">
+                Vision
               </a>
               <a className={navItem} href="#faq">
                 FAQ
@@ -115,14 +124,14 @@ export const PublicLanding: React.FC = () => {
             <a className={`${navItem} whitespace-nowrap`} href="#services">
               Services
             </a>
-            <a className={`${navItem} whitespace-nowrap`} href="#inventory">
-              Inventory
+            <a className={`${navItem} whitespace-nowrap`} href="#products">
+              Products
             </a>
-            <a className={`${navItem} whitespace-nowrap`} href="#why-us">
-              Why us
+            <a className={`${navItem} whitespace-nowrap`} href="#about">
+              About
             </a>
-            <a className={`${navItem} whitespace-nowrap`} href="#reviews">
-              Reviews
+            <a className={`${navItem} whitespace-nowrap`} href="#vision">
+              Vision
             </a>
             <a className={`${navItem} whitespace-nowrap`} href="#faq">
               FAQ
@@ -134,17 +143,18 @@ export const PublicLanding: React.FC = () => {
         <section className="mx-auto max-w-7xl px-4 pb-16 pt-10 sm:px-6 sm:pt-14 lg:grid lg:grid-cols-2 lg:items-center lg:gap-10 lg:px-8 lg:pb-24">
           <div className="max-w-xl lg:max-w-none">
             <p className="text-[11px] font-bold uppercase tracking-[0.35em]" style={{ color: RED }}>
-              Est. 2010 · Auto services &amp; sales
+              Sarangani roots · Mindanao-wide service
             </p>
             <h1 className="mt-4 text-4xl font-black uppercase leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-6xl">
-              Built for the <span style={{ color: RED }}>road ahead.</span>
+              Trusted automotive{' '}
+              <span style={{ color: RED }}>services</span>
               <br />
-              Serviced with <span style={{ color: RED }}>grit.</span>
+              &amp; <span style={{ color: RED }}>solutions.</span>
             </h1>
             <p className="mt-6 text-sm leading-relaxed text-zinc-300 sm:text-base">
-              {COMPANY_DISPLAY_NAME} — your trusted garage and showroom for honest repairs, certified diagnostics, and
-              hand-picked vehicles ready to drive home today. Based in{' '}
-              <span className="font-semibold text-white">General Santos City</span>.
+              {COMPANY_STORY_INTRO} Headquartered in{' '}
+              <span className="font-semibold text-white">General Santos City</span>, we serve private owners, commercial
+              fleets, and institutional clients across Mindanao.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <a
@@ -158,53 +168,45 @@ export const PublicLanding: React.FC = () => {
                 <ArrowRight className="h-4 w-4" aria-hidden />
               </a>
               <a
-                href="#inventory"
+                href="#products"
                 className="inline-flex items-center gap-2 rounded-sm border-2 border-white/90 bg-transparent px-6 py-3 text-xs font-bold uppercase tracking-wide text-white transition hover:bg-white/10"
               >
-                Browse inventory
+                View products
               </a>
             </div>
             <dl className="mt-12 grid grid-cols-3 gap-4 border-t border-white/10 pt-10 sm:gap-8">
               <div>
-                <dt className="text-2xl font-black text-white sm:text-3xl">15+</dt>
+                <dt className="text-2xl font-black text-white sm:text-3xl">{COMPANY_SERVICES.length}</dt>
                 <dd className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 sm:text-xs">
-                  Years
+                  Core services
                 </dd>
               </div>
               <div>
-                <dt className="text-2xl font-black text-white sm:text-3xl">8k+</dt>
+                <dt className="text-2xl font-black text-white sm:text-3xl">{COMPANY_PRODUCTS.length}</dt>
                 <dd className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 sm:text-xs">
-                  Cars serviced
+                  Product lines
                 </dd>
               </div>
               <div>
-                <dt className="text-2xl font-black text-white sm:text-3xl">4.9</dt>
+                <dt className="text-2xl font-black text-white sm:text-3xl">2023</dt>
                 <dd className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 sm:text-xs">
-                  Avg rating
+                  GenSan branch
                 </dd>
               </div>
             </dl>
           </div>
 
-          {/* Hero visual — design mock image */}
+          {/* Hero visual — company showcase video */}
           <div className="relative mx-auto mt-12 max-w-md lg:mx-0 lg:mt-0 lg:max-w-none">
             <div className="relative aspect-[4/3] overflow-hidden rounded-sm border border-white/10 shadow-2xl shadow-black/80 sm:aspect-video lg:aspect-[16/10] lg:min-h-[280px]">
-              <img
-                src={landingHeroUrl}
-                alt="Cinematic night scene — classic car at a lit street stop, Motor World hero"
-                className="h-full w-full object-cover object-center"
-                width={1200}
-                height={675}
-                loading="eager"
-                decoding="async"
-              />
+              <LandingHeroVideo />
               <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent" />
 
               <div
                 className="absolute left-3 top-3 max-w-[11rem] rounded-sm px-2 py-1.5 text-[9px] font-black uppercase leading-tight tracking-wide text-black shadow-md sm:left-4 sm:top-4 sm:max-w-[13rem] sm:px-3 sm:py-2 sm:text-[10px]"
                 style={{ backgroundColor: YELLOW }}
               >
-                Now open · 24/7 roadside
+                PHILGEPS · Gov&apos;t supplier
               </div>
 
               <div className="absolute left-2 top-1/2 flex -translate-y-1/2 flex-col gap-2 sm:left-3">
@@ -243,10 +245,10 @@ export const PublicLanding: React.FC = () => {
                 </div>
                 <div className="flex flex-1 flex-col justify-center px-3 py-2 sm:px-4 sm:py-3">
                   <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-400 sm:text-[10px]">
-                    Diagnostic special
+                    Auto scanner diagnostics
                   </p>
                   <p className="text-[11px] font-black uppercase tracking-wide text-white sm:text-xs">
-                    Free 25-point check
+                    Skilled technicians · modern equipment
                   </p>
                 </div>
               </div>
@@ -262,16 +264,16 @@ export const PublicLanding: React.FC = () => {
                   — 02 — Services
                 </p>
                 <h2 className="mt-4 text-3xl font-black uppercase leading-[1.1] tracking-tight text-white sm:text-4xl lg:text-5xl">
-                  Full-service garage. Zero shortcuts.
+                  Products &amp; services for every vehicle class.
                 </h2>
               </div>
               <p className="max-w-xl text-sm leading-relaxed text-zinc-400 sm:text-base lg:pb-1">
-                From a quick oil change to a full engine overhaul, our certified team treats every car like
-                it&apos;s their own. Transparent quotes. Real warranties. No surprises.
+                Autos, trucks, and heavy equipment — for private owners, commercial fleets, and institutional
+                clients. Strict quality standards, skilled technicians, and modern equipment.
               </p>
             </div>
 
-            <div className="mt-10 grid grid-cols-1 gap-4 lg:mt-14 lg:grid-cols-2 lg:grid-rows-2 lg:gap-4">
+            <div className="mt-10 hidden grid-cols-1 gap-4 lg:grid-cols-2 lg:grid-rows-2 lg:gap-4" aria-hidden>
               {/* Tall left — certified mechanics */}
               <article className="relative min-h-[380px] overflow-hidden rounded-xl border border-white/10 shadow-xl lg:row-span-2 lg:min-h-[520px]">
                 <div
@@ -344,18 +346,42 @@ export const PublicLanding: React.FC = () => {
                 </a>
               </article>
             </div>
-            <p className="mt-4 text-center text-[10px] text-zinc-600 sm:text-left">
-              *Sample promotional pricing for illustration — message us on Facebook for current rates and bundles.
+            <ul className="mt-10 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {COMPANY_SERVICES.map((name) => (
+                <li
+                  key={name}
+                  className="flex items-start gap-3 rounded-lg border border-white/10 bg-zinc-950/80 px-4 py-3"
+                >
+                  <Wrench className="mt-0.5 h-4 w-4 shrink-0" style={{ color: RED }} aria-hidden />
+                  <span className="text-sm font-medium text-zinc-200">{name}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-6 text-center text-[10px] text-zinc-600 sm:text-left">
+              Contact us on Facebook for quotes, fleet schedules, and service availability.
             </p>
           </div>
         </section>
 
-        <section id="inventory" className={sectionShell}>
+        <section id="products" className={sectionShell}>
           <div className="mx-auto max-w-3xl">
-            <h2 className={h2}>Inventory</h2>
+            <h2 className={h2}>Products</h2>
             <p className="mt-4 text-sm leading-relaxed text-zinc-400 sm:text-base">
-              Hand-picked units and promos are announced first on our Facebook page — follow for photos, pricing, and
-              availability in General Santos City.
+              Quality automotive parts and supplies — retail, wholesale, and distribution for effective vehicle
+              servicing.
+            </p>
+            <ul className="mt-6 flex flex-wrap gap-2">
+              {COMPANY_PRODUCTS.map((p) => (
+                <li
+                  key={p}
+                  className="rounded-full border border-white/15 bg-zinc-900 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-200"
+                >
+                  {p}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-6 text-sm text-zinc-400">
+              Stock updates and promos are posted on our Facebook page.
             </p>
             <a
               href={FACEBOOK_BUSINESS_PAGE_URL}
@@ -364,28 +390,51 @@ export const PublicLanding: React.FC = () => {
               className="mt-8 inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-white underline decoration-red-600 underline-offset-4 hover:decoration-white"
             >
               <Facebook className="h-4 w-4" style={{ color: RED }} aria-hidden />
-              View listings on Facebook
+              View updates on Facebook
             </a>
           </div>
         </section>
 
-        <section id="why-us" className={sectionShell}>
-          <div className="mx-auto max-w-3xl">
-            <h2 className={h2}>Why us</h2>
-            <p className="mt-4 text-sm leading-relaxed text-zinc-400 sm:text-base">
-              Straight answers, fair pricing, and work you can stand behind. We have grown with GenSan drivers since
-              2010 — same commitment, modern equipment.
-            </p>
+        <section id="about" className={sectionShell}>
+          <div className="mx-auto max-w-3xl space-y-6">
+            <h2 className={h2}>About us</h2>
+            <p className="text-sm leading-relaxed text-zinc-400 sm:text-base">{COMPANY_STORY_INTRO}</p>
+            <p className="text-sm leading-relaxed text-zinc-400 sm:text-base">{COMPANY_EXPANSION_NOTE}</p>
+            <p className="text-sm leading-relaxed text-zinc-400 sm:text-base">{COMPANY_PHILGEPS_NOTE}</p>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500">Service coverage</p>
+              <ul className="mt-3 list-inside list-disc space-y-1 text-sm text-zinc-400">
+                {COMPANY_SERVICE_AREAS.map((area) => (
+                  <li key={area}>{area}</li>
+                ))}
+              </ul>
+            </div>
           </div>
         </section>
 
-        <section id="reviews" className={sectionShell}>
-          <div className="mx-auto max-w-3xl">
-            <h2 className={h2}>Reviews</h2>
-            <p className="mt-4 text-sm leading-relaxed text-zinc-400 sm:text-base">
-              Customer stories and ratings live on our Facebook page — that is where the community sees real feedback
-              and photos from the shop floor.
-            </p>
+        <section id="vision" className={sectionShell}>
+          <div className="mx-auto max-w-3xl space-y-10">
+            <div>
+              <h2 className={h2}>Vision</h2>
+              <p className="mt-4 text-sm leading-relaxed text-zinc-400 sm:text-base">{COMPANY_VISION}</p>
+            </div>
+            <div>
+              <h2 className={h2}>Mission</h2>
+              <p className="mt-4 text-sm leading-relaxed text-zinc-400 sm:text-base">{COMPANY_MISSION}</p>
+            </div>
+            <div>
+              <h2 className={h2}>Our values</h2>
+              <ul className="mt-4 flex flex-wrap gap-2">
+                {COMPANY_VALUES.map((v) => (
+                  <li
+                    key={v}
+                    className="rounded-sm border border-white/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-300"
+                  >
+                    {v}
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         </section>
 
@@ -395,14 +444,23 @@ export const PublicLanding: React.FC = () => {
             <div className="mt-8 space-y-6 text-sm text-zinc-400">
               <div>
                 <p className="font-bold uppercase tracking-wide text-white">Do you service fleet vehicles?</p>
-                <p className="mt-2">Yes — contact us on Facebook with your fleet size and preferred schedule.</p>
+                <p className="mt-2">
+                  Yes. We serve private owners, commercial fleets, and institutional clients — contact us on Facebook
+                  with your fleet size and preferred schedule.
+                </p>
               </div>
               <div>
-                <p className="font-bold uppercase tracking-wide text-white">Where are you located?</p>
-                <p className="mt-2 inline-flex items-center gap-2">
-                  <MapPin className="h-4 w-4 shrink-0" style={{ color: RED }} aria-hidden />
-                  General Santos City, Philippines — exact pin is shared on our Facebook page.
-                </p>
+                <p className="font-bold uppercase tracking-wide text-white">Where do you operate?</p>
+                <p className="mt-2 text-zinc-400">Based in General Santos City, we serve customers across:</p>
+                <ul className="mt-2 list-inside list-disc space-y-1">
+                  {COMPANY_SERVICE_AREAS.map((area) => (
+                    <li key={area}>{area}</li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <p className="font-bold uppercase tracking-wide text-white">Are you a government supplier?</p>
+                <p className="mt-2">{COMPANY_PHILGEPS_NOTE}</p>
               </div>
             </div>
           </div>

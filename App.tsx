@@ -1093,21 +1093,9 @@ const App: React.FC = () => {
                   {isAdmin && <NotificationsBell />}
                   {canEdit && (
                     <>
-                      <Button onClick={() => { setItemToRelease(null); setIsReleaseModalOpen(true); }} variant="secondary">
-                        <ArrowUpRight className="h-4 w-4" />
-                        Release
-                      </Button>
-                      <Button onClick={() => { setItemToReturn(null); setIsReturnModalOpen(true); }} variant="secondary">
-                        <ArrowDownLeft className="h-4 w-4" />
-                        Return
-                      </Button>
                       <Button onClick={() => setIsReturnFromSalesModalOpen(true)} variant="secondary">
                         <RotateCcw className="h-4 w-4" />
                         Sales Return
-                      </Button>
-                      <Button onClick={() => { setItemToIssue(null); setIsIssueModalOpen(true); }} variant="secondary">
-                        <ArrowUpRight className="h-4 w-4" />
-                        Issue
                       </Button>
                       <Button onClick={() => { setItemToEdit(undefined); setIsAddModalOpen(true); }} variant="primary">
                         <Plus className="h-4 w-4" />

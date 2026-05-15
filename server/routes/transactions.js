@@ -2,14 +2,14 @@ import express from 'express';
 import { requireAdmin } from '../middleware/rbac.js';
 import {
   addTransaction,
-  createLoan,
-  createSoa,
   getItemById,
   getReturnedQuantityForRelease,
   getSoaByTransactionId,
   getTransactionById,
   getTransactions,
   rebuildProductItemInventoryFromLedger,
+  resolveChequeForRelease,
+  syncReceivablesForRelease,
   updateItem,
   updateTransaction,
   upsertDocumentArchivesForRelease,
@@ -133,26 +133,70 @@ router.patch('/:id', requireAdmin, async (req, res) => {
   }
 });
 
+router.post('/resolve-cheque', requireAdmin, async (req, res) => {
+  try {
+    const releaseTransactionId = String(req.body?.releaseTransactionId || '').trim();
+    const outcome = String(req.body?.outcome || '').trim().toLowerCase();
+    const result = await resolveChequeForRelease(releaseTransactionId, outcome);
+    await logActivity(req.user.id, outcome === 'cleared' ? 'CHEQUE_CLEARED' : 'CHEQUE_BOUNCED', {
+      transactionId: releaseTransactionId,
+    });
+    scheduleViewerSync();
+    return res.json(result);
+  } catch (error) {
+    const msg = error?.message || 'Failed to resolve cheque.';
+    const status = msg.includes('not found') ? 404 : msg.includes('Only cheque') || msg.includes('already cleared') ? 400 : 500;
+    return res.status(status).json({ error: msg });
+  }
+});
+
 router.post('/', requireAdmin, async (req, res) => {
   try {
     const payload = req.body || {};
     const itemType = payload.itemType === 'Service' ? 'Service' : 'Product';
     const quantity = Math.abs(Number(payload.quantityChange ?? 0));
     const type = String(payload.type || '');
+    const posLines = Array.isArray(payload.posLineItems) ? payload.posLineItems : [];
+    const hasPosProductLines = posLines.some((l) => l.itemType === 'Product' && l.itemId);
     const item = payload.itemId ? await getItemById(payload.itemId) : null;
 
-    if (itemType === 'Product' && !item) {
+    if (itemType === 'Product' && !item && !(type === 'RELEASE' && hasPosProductLines)) {
       return res.status(404).json({ error: 'Inventory item not found.' });
     }
     if (quantity <= 0) {
       return res.status(400).json({ error: 'Quantity must be greater than zero.' });
     }
 
-    if ((type === 'RELEASE' || type === 'ISSUE') && item && item.quantity < quantity) {
+    if (type === 'RELEASE' && hasPosProductLines) {
+      for (const line of posLines) {
+        if (line.itemType !== 'Product' || !line.itemId) continue;
+        const lineQty = Math.abs(Number(line.quantity) || 0);
+        if (lineQty <= 0) continue;
+        const inv = await getItemById(line.itemId);
+        if (!inv) return res.status(404).json({ error: `Inventory item not found: ${line.itemId}` });
+        if (inv.quantity < lineQty) {
+          return res.status(400).json({ error: `Insufficient stock for ${inv.name}.` });
+        }
+      }
+    } else if ((type === 'RELEASE' || type === 'ISSUE') && item && item.quantity < quantity) {
       return res.status(400).json({ error: 'Insufficient stock.' });
     }
 
-    if (item && ['RELEASE', 'ISSUE', 'RETURN', 'ADDITION'].includes(type)) {
+    if (type === 'RELEASE' && hasPosProductLines) {
+      const now = payload.timestamp || new Date().toISOString();
+      for (const line of posLines) {
+        if (line.itemType !== 'Product' || !line.itemId) continue;
+        const lineQty = Math.abs(Number(line.quantity) || 0);
+        if (lineQty <= 0) continue;
+        const inv = await getItemById(line.itemId);
+        await updateItem(inv.id, {
+          quantity: inv.quantity - lineQty,
+          unitPrice: inv.unitPrice,
+          lastUpdated: now,
+          receiptNumber: payload.receiptNumber ?? inv.receiptNumber ?? null,
+        });
+      }
+    } else if (item && ['RELEASE', 'ISSUE', 'RETURN', 'ADDITION'].includes(type)) {
       const delta = Number(payload.quantityChange ?? 0);
       if (type === 'ADDITION') {
         const addQty = Math.abs(delta);
@@ -188,79 +232,38 @@ router.post('/', requireAdmin, async (req, res) => {
       }
     }
 
+    const mode = String(payload.modeOfPayment || '').trim();
     const created = await addTransaction({
       ...payload,
       itemType,
       releasedBy: req.user.displayName,
+      chequeExpectedClearDate:
+        mode === 'Cheque' ? String(payload.chequeExpectedClearDate || '').trim() || null : null,
+      chequeReference:
+        mode === 'Cheque' && payload.chequeReference
+          ? String(payload.chequeReference).trim()
+          : null,
+      chequeStatus: mode === 'Cheque' ? 'pending' : null,
+      chequeClearedAt: null,
     });
 
     let soaIdForArchive = null;
-    if (type === 'RELEASE' && String(payload.modeOfPayment || '').toLowerCase() === 'credit') {
-      const dueDays = Math.max(1, Number(payload.dueDays || 30));
-      const interestRate = Number(payload.interestRate || 0);
-      const downPayment = Math.max(0, Number(payload.downPayment || 0));
-      const subtotal = Number(created.totalValue);
-      const discountAmount =
-        payload.discountPercent != null
-          ? subtotal * (Number(payload.discountPercent) / 100)
-          : Number(payload.discountAmount || 0);
-      const afterDiscount = subtotal - discountAmount;
-      const taxAmount =
-        payload.taxPercent != null
-          ? afterDiscount * (Number(payload.taxPercent) / 100)
-          : Number(payload.taxAmount || 0);
-      const totalAmountDue = afterDiscount + taxAmount;
-      const dueDate = new Date(created.timestamp);
-      dueDate.setDate(dueDate.getDate() + dueDays);
-
-      const soa = await createSoa({
-        transactionId: created.id,
-        customerName: created.recipient || 'Walk-in Customer',
-        itemId: created.itemId,
-        itemName: created.itemName,
-        quantity,
-        srp: created.unitPriceAtTime,
-        discountPercent: payload.discountPercent ?? null,
-        discountAmount: discountAmount || null,
-        taxPercent: payload.taxPercent ?? null,
-        taxAmount: taxAmount || null,
-        totalAmountDue,
-        transactionDate: created.timestamp,
-        dueDate: dueDate.toISOString(),
-        paymentStatus: downPayment >= totalAmountDue ? 'Paid' : downPayment > 0 ? 'Partially Paid' : 'Unpaid',
-        personId: payload.personId ?? null,
-        vehicleId: payload.vehicleId ?? null,
-        vehiclePlateNumber: null,
-        itemType,
-      });
-      soaIdForArchive = soa.id;
-      await logActivity(req.user.id, 'CREATE_SOA', {
-        soaId: soa.id,
-        transactionId: created.id,
-        customerName: soa.customerName,
-        totalAmountDue: soa.totalAmountDue,
-      });
-
-      const principal = Math.max(0, totalAmountDue - downPayment);
-      if (principal > 0) {
-        const totalAmount = principal + principal * (interestRate / 100);
-        await createLoan({
-          transactionId: created.id,
-          customerName: created.recipient || 'Walk-in Customer',
-          totalAmount,
-          downPayment,
-          remainingBalance: totalAmount,
-          interestRate,
-          startDate: created.timestamp,
-          dueDate: dueDate.toISOString(),
-          paymentSchedule: payload.paymentSchedule === 'weekly' ? 'weekly' : 'monthly',
-          status: 'ongoing',
-          personId: payload.personId ?? null,
-          vehicleId: payload.vehicleId ?? null,
-          vehiclePlateNumber: null,
+    if (type === 'RELEASE' && created.recipient) {
+      try {
+        const receivable = await syncReceivablesForRelease(created, payload);
+        soaIdForArchive = receivable.soaId;
+        if (soaIdForArchive) {
+          await logActivity(req.user.id, 'CREATE_SOA', {
+            soaId: soaIdForArchive,
+            transactionId: created.id,
+            customerName: created.recipient,
+            modeOfPayment: created.modeOfPayment,
+          });
+        }
+      } catch (receivableErr) {
+        return res.status(400).json({
+          error: receivableErr?.message || 'Failed to create receivable records for this sale.',
         });
-      } else if (soa) {
-        // Cash-equivalent credit transaction where down payment already covers the billing.
       }
     }
 

@@ -221,9 +221,199 @@ function transactionToApi(tx) {
     dueDate: tx.due_date ?? tx.dueDate ?? null,
     terms: tx.terms ?? null,
     posLineItems: tx.pos_line_items ?? tx.posLineItems ?? null,
+    chequeExpectedClearDate: tx.cheque_expected_clear_date ?? tx.chequeExpectedClearDate ?? null,
+    chequeReference: tx.cheque_reference ?? tx.chequeReference ?? null,
+    chequeStatus: tx.cheque_status ?? tx.chequeStatus ?? null,
+    chequeClearedAt: tx.cheque_cleared_at ?? tx.chequeClearedAt ?? null,
     editedAt: tx.edited_at ?? tx.editedAt ?? null,
     editNote: tx.edit_note ?? tx.editNote ?? null,
   };
+}
+
+export function receivableModesNeedLoan(mode) {
+  const m = String(mode || '').trim();
+  return m === 'Credit' || m === 'Cheque';
+}
+
+export function isNonCashReleasePayment(mode) {
+  const m = String(mode || '').trim();
+  return m && m !== 'Cash';
+}
+
+export function receivableDueDateFromPayload(body, timestamp, mode) {
+  const m = String(mode || '').trim();
+  if (m === 'Cheque') {
+    const raw = String(body.chequeExpectedClearDate || '').trim();
+    if (!raw) throw new Error('Expected cheque clearance date is required for Cheque sales.');
+    const d = new Date(raw.length === 10 ? `${raw}T12:00:00` : raw);
+    if (Number.isNaN(d.getTime())) throw new Error('Invalid cheque expected clearance date.');
+    return d.toISOString();
+  }
+  if (m === 'Purchase Order') {
+    const raw = String(body.dueDate || '').trim();
+    if (raw) {
+      const d = new Date(raw.length === 10 ? `${raw}T12:00:00` : raw);
+      if (!Number.isNaN(d.getTime())) return d.toISOString();
+    }
+    return timestamp;
+  }
+  const dueDays = Math.min(365, Math.max(1, Number(body.dueDays || 30)));
+  const dueDate = new Date(timestamp);
+  dueDate.setDate(dueDate.getDate() + dueDays);
+  return dueDate.toISOString();
+}
+
+/**
+ * After a RELEASE, create SOA and/or loan rows for non-cash payment modes (Credit, Cheque, Purchase Order).
+ */
+export async function syncReceivablesForRelease(created, payload) {
+  const mode = String(created.modeOfPayment || '').trim();
+  if (!isNonCashReleasePayment(mode) || !created.recipient) {
+    return { soaId: null };
+  }
+
+  const posLines = Array.isArray(created.posLineItems)
+    ? created.posLineItems
+    : Array.isArray(payload.posLineItems)
+      ? payload.posLineItems
+      : [];
+  const totalUnits =
+    posLines.length > 0
+      ? posLines.reduce((s, l) => s + Math.abs(Number(l.quantity) || 0), 0)
+      : Math.abs(Number(created.quantityChange) || 0);
+
+  const totalAmountDue = normalizeNumber(created.totalValue);
+  const discountAmount =
+    payload.discountAmount != null && Number(payload.discountAmount) > 0
+      ? normalizeNumber(payload.discountAmount)
+      : null;
+  const itemType = created.itemType === 'Service' ? 'Service' : 'Product';
+
+  let vehiclePlateNumber = null;
+  const vehicleId = payload.vehicleId ?? created.vehicleId ?? null;
+  if (vehicleId) {
+    const vehicle = await getVehicleById(vehicleId);
+    vehiclePlateNumber = vehicle?.plateNumber ?? null;
+  }
+
+  const dueDateStr = receivableDueDateFromPayload(payload, created.timestamp, mode);
+  let soaId = null;
+
+  if (receivableModesNeedLoan(mode) || mode === 'Purchase Order') {
+    const soa = await createSoa({
+      transactionId: created.id,
+      customerName: created.recipient || 'Walk-in Customer',
+      itemId: created.itemId ?? null,
+      itemName: created.itemName,
+      quantity: totalUnits || Math.abs(Number(created.quantityChange) || 1),
+      srp: created.unitPriceAtTime,
+      discountPercent: payload.discountPercent ?? null,
+      discountAmount,
+      taxPercent: payload.taxPercent ?? null,
+      taxAmount: payload.taxAmount != null ? normalizeNumber(payload.taxAmount) : null,
+      totalAmountDue,
+      transactionDate: created.timestamp,
+      dueDate: dueDateStr,
+      paymentStatus: 'Unpaid',
+      personId: payload.personId ?? created.personId ?? null,
+      vehicleId,
+      vehiclePlateNumber,
+      itemType,
+    });
+    soaId = soa.id;
+  }
+
+  if (receivableModesNeedLoan(mode) && totalAmountDue > 0) {
+    const downPayment = Math.max(0, Math.min(totalAmountDue, Number(payload.downPayment || 0)));
+    const interestRate = mode === 'Cheque' ? 0 : Number(payload.interestRate || 0);
+    const principal = Math.max(0, totalAmountDue - downPayment);
+    const totalAmount =
+      mode === 'Cheque' ? totalAmountDue : principal + principal * (interestRate / 100);
+    const remainingBalance = Math.max(0, totalAmount - downPayment);
+
+    await createLoan({
+      transactionId: created.id,
+      customerName: created.recipient || 'Walk-in Customer',
+      totalAmount: mode === 'Cheque' ? totalAmountDue : totalAmount,
+      downPayment,
+      remainingBalance: mode === 'Cheque' ? Math.max(0, totalAmountDue - downPayment) : remainingBalance,
+      interestRate: mode === 'Cheque' ? null : interestRate,
+      startDate: created.timestamp,
+      dueDate: dueDateStr,
+      paymentSchedule: payload.paymentSchedule === 'weekly' ? 'weekly' : 'monthly',
+      status:
+        remainingBalance <= 0
+          ? 'paid'
+          : mode === 'Cheque'
+            ? 'unpaid'
+            : 'ongoing',
+      personId: payload.personId ?? created.personId ?? null,
+      vehicleId,
+      vehiclePlateNumber,
+    });
+  } else if (mode === 'Purchase Order' && totalAmountDue > 0) {
+    await createLoan({
+      transactionId: created.id,
+      customerName: created.recipient || 'Walk-in Customer',
+      totalAmount: totalAmountDue,
+      downPayment: 0,
+      remainingBalance: totalAmountDue,
+      interestRate: null,
+      startDate: created.timestamp,
+      dueDate: dueDateStr,
+      paymentSchedule: 'monthly',
+      status: 'unpaid',
+      personId: payload.personId ?? created.personId ?? null,
+      vehicleId,
+      vehiclePlateNumber,
+    });
+  }
+
+  return { soaId };
+}
+
+export async function resolveChequeForRelease(releaseTransactionId, outcome) {
+  const id = String(releaseTransactionId || '').trim();
+  const result = String(outcome || '').trim().toLowerCase();
+  if (!id || !['cleared', 'bounced'].includes(result)) {
+    throw new Error('releaseTransactionId and outcome (cleared|bounced) are required.');
+  }
+
+  const tx = await getTransactionById(id);
+  if (!tx || tx.type !== 'RELEASE') throw new Error('Transaction not found.');
+  if (String(tx.modeOfPayment || '').trim() !== 'Cheque') {
+    throw new Error('Only cheque sales can be resolved this way.');
+  }
+  if (tx.chequeStatus === 'cleared') throw new Error('Cheque already cleared.');
+
+  if (result === 'bounced') {
+    await updateTransaction(id, {
+      cheque_status: 'bounced',
+      cheque_cleared_at: null,
+    });
+    return { ok: true, chequeStatus: 'bounced' };
+  }
+
+  const loan = await getLoanByTransactionId(id);
+  if (!loan) throw new Error('No receivable record linked to this sale.');
+
+  const remaining = normalizeNumber(loan.remainingBalance);
+  const now = nowIso();
+  if (remaining > 0) {
+    await addLoanPayment(loan.id, {
+      amountPaid: remaining,
+      paidAt: now,
+      note: 'Cheque cleared — recorded as cash received',
+    });
+  } else {
+    await updateLoanStatus(loan.id, 'paid');
+  }
+
+  await updateTransaction(id, {
+    cheque_status: 'cleared',
+    cheque_cleared_at: now,
+  });
+  return { ok: true, chequeStatus: 'cleared' };
 }
 
 function purchaseToApi(purchase) {
@@ -577,6 +767,11 @@ export async function addTransaction(tx) {
     due_date: tx.dueDate ?? tx.due_date ?? null,
     terms: tx.terms ?? null,
     pos_line_items: tx.posLineItems ?? tx.pos_line_items ?? null,
+    cheque_expected_clear_date:
+      tx.chequeExpectedClearDate ?? tx.cheque_expected_clear_date ?? null,
+    cheque_reference: tx.chequeReference ?? tx.cheque_reference ?? null,
+    cheque_status: tx.chequeStatus ?? tx.cheque_status ?? null,
+    cheque_cleared_at: tx.chequeClearedAt ?? tx.cheque_cleared_at ?? null,
     edited_at: tx.editedAt ?? tx.edited_at ?? null,
     edit_note: tx.editNote ?? tx.edit_note ?? null,
   };

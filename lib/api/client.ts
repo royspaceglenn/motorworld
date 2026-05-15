@@ -397,10 +397,11 @@ export const transactionsApi = {
       method: 'PATCH',
       body: JSON.stringify(payload),
     }),
-  resolveCheque: (_payload: { releaseTransactionId: string; outcome: 'cleared' | 'bounced' }) =>
-    Promise.reject(
-      new Error('Cheque clearing requires Firebase Cloud Functions. Set VITE_DATA_BACKEND=firebase and deploy functions.')
-    ),
+  resolveCheque: (payload: { releaseTransactionId: string; outcome: 'cleared' | 'bounced' }) =>
+    request<{ ok: boolean; chequeStatus: string }>('/api/transactions/resolve-cheque', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 };
 
 export const soaApi = {

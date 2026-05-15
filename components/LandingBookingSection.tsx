@@ -9,19 +9,11 @@ import {
   INSTAGRAM_PAGE_URL,
   TIKTOK_PAGE_URL,
 } from '../lib/company';
+import { LANDING_BOOKING_SERVICE_OPTIONS } from '../lib/landingBookingServices';
 import { MapPin, Phone, Mail, Clock, Facebook, Instagram } from 'lucide-react';
 
 const RED = '#E31837';
 const LABEL = '#c45c4a';
-
-const SERVICE_OPTIONS = [
-  { value: '', label: 'Select service *' },
-  { value: 'oil-change', label: 'Oil change' },
-  { value: 'general-repair', label: 'General repair' },
-  { value: 'diagnostics', label: 'Diagnostics' },
-  { value: 'vehicle-inquiry', label: 'Vehicle inquiry' },
-  { value: 'other', label: 'Other' },
-] as const;
 
 function ContactRow({
   label,
@@ -72,7 +64,7 @@ export function LandingBookingSection() {
         '',
         `Phone: ${phone}`,
         `Email: ${email}`,
-        `Service: ${SERVICE_OPTIONS.find((o) => o.value === service)?.label || service}`,
+        `Service: ${LANDING_BOOKING_SERVICE_OPTIONS.find((o) => o.value === service)?.label || service}`,
         `Preferred date: ${preferredDate || '—'}`,
         `Vehicle: ${vehicle || '—'}`,
         '',
@@ -227,7 +219,7 @@ export function LandingBookingSection() {
                   value={service}
                   onChange={(e) => setService(e.target.value)}
                 >
-                  {SERVICE_OPTIONS.map((o) => (
+                  {LANDING_BOOKING_SERVICE_OPTIONS.map((o) => (
                     <option key={o.value || '_placeholder'} value={o.value}>
                       {o.label}
                     </option>

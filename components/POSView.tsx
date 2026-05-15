@@ -224,16 +224,9 @@ export const POSView: React.FC<POSViewProps> = ({
         setError('Select a product.');
         return;
       }
-      if (cart.length > 0) {
-        const c0 = cart[0]!;
-        if (c0.itemType !== 'Product') {
-          setError('This cart already has a service. Remove it or complete the sale before adding a product.');
-          return;
-        }
-        if (c0.itemId !== activeDraftItem.id) {
-          setError('Only one product SKU per sale. Clear the cart or change quantity for the item already in the cart.');
-          return;
-        }
+      if (cart.some((l) => l.itemType === 'Service')) {
+        setError('This cart already has a service. Remove it or complete the sale before adding a product.');
+        return;
       }
       const q = Math.max(1, Math.floor(draftQty));
       const existingIdx = cart.findIndex((l) => l.itemType === 'Product' && l.itemId === activeDraftItem.id);
@@ -274,16 +267,16 @@ export const POSView: React.FC<POSViewProps> = ({
         setError('Enter a service name.');
         return;
       }
-      if (cart.length > 0) {
-        const c0 = cart[0]!;
-        if (c0.itemType !== 'Service') {
-          setError('This cart already has a product. Remove it or complete the sale before adding a service.');
-          return;
-        }
-        if (c0.name.trim().toLowerCase() !== name.toLowerCase()) {
-          setError('Only one service per sale. Clear the cart or use the same service name to add quantity.');
-          return;
-        }
+      if (cart.some((l) => l.itemType === 'Product')) {
+        setError('This cart already has a product. Remove it or complete the sale before adding a service.');
+        return;
+      }
+      if (
+        cart.length > 0 &&
+        !cart.some((l) => l.itemType === 'Service' && l.name.trim().toLowerCase() === name.toLowerCase())
+      ) {
+        setError('Only one service per sale. Clear the cart or use the same service name to add quantity.');
+        return;
       }
       const q = Math.max(1, Math.floor(draftQty));
       const existingIdx = cart.findIndex(
@@ -566,9 +559,10 @@ export const POSView: React.FC<POSViewProps> = ({
             <div>
               <h3 className="font-bold text-slate-800">Point of Sale</h3>
               <p className="text-sm text-slate-500">
-                One product <span className="font-medium text-slate-600">or</span> one service per receipt (quantity can be
-                more than one). Per-unit discount applies only to that line: total discount = discount per unit × quantity.
-                COGS and gross profit use inventory capital price on product lines.
+                Add multiple product lines per receipt (each with its own quantity, price, and per-unit discount), or one
+                service line (quantity can be more than one). Products and services cannot be mixed in the same cart.
+                Total line discount = discount per unit × quantity. COGS and gross profit use inventory capital price on
+                product lines.
               </p>
             </div>
           </div>

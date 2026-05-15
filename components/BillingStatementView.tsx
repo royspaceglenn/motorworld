@@ -61,96 +61,33 @@ function createId() {
   return crypto.randomUUID().slice(0, 8);
 }
 
-/** Sample data aligned with Motor World statement (PHP); Caltex line uses whole-peso round-up on line total. */
-export function createMotorWorldSampleLines(): BillingLine[] {
-  return [
-    {
-      id: createId(),
-      date: '2026-04-30',
-      description: '10W40 MOTUL 7000 4T - 1L',
-      qty: 12,
-      uom: 'BOTTLE/S',
-      unitPrice: 705.6,
-      priceDiscount: 0,
-      totalRounding: 'half_up_cents',
-    },
-    {
-      id: createId(),
-      date: '2026-04-30',
-      description: 'TOTAL MULTIS MP3 GREASE - 500G',
-      qty: 4,
-      uom: 'PC/S',
-      unitPrice: 287,
-      priceDiscount: 0,
-      totalRounding: 'half_up_cents',
-    },
-    {
-      id: createId(),
-      date: '2026-04-30',
-      description: '10W40 TOTAL QUARTZ 7000 SN - 4L',
-      qty: 6,
-      uom: 'GAL/S',
-      unitPrice: 1890,
-      priceDiscount: 0,
-      totalRounding: 'half_up_cents',
-    },
-    {
-      id: createId(),
-      date: '2026-04-30',
-      description: 'N100L/E41L SUPERSTART - 17 PLATES BATTERY',
-      qty: 2,
-      uom: 'PC/S',
-      unitPrice: 8960,
-      priceDiscount: 0,
-      totalRounding: 'half_up_cents',
-    },
-    {
-      id: createId(),
-      date: '2026-04-30',
-      description: 'TOTAL HBF3 BRAKE FLUID - 900ML',
-      qty: 3,
-      uom: 'BOTTLE/S',
-      unitPrice: 491.4,
-      priceDiscount: 0,
-      totalRounding: 'half_up_cents',
-    },
-    {
-      id: createId(),
-      date: '2026-04-30',
-      description: 'PETRON GEP SAE 90 - 1L',
-      qty: 8,
-      uom: 'BOTTLE/S',
-      unitPrice: 420,
-      priceDiscount: 0,
-      totalRounding: 'half_up_cents',
-    },
-    {
-      id: createId(),
-      date: '2026-04-30',
-      description: 'CALTEX HAVOLINE PLUS 2T OIL - 200ML',
-      qty: 36,
-      uom: 'BOTTLE/S',
-      unitPrice: 58.33,
-      priceDiscount: 0,
-      totalRounding: 'ceil_whole_peso',
-    },
-  ];
-}
-
-const defaultHeader = (): BillingHeaderForm => ({
-  companyName: 'Motor World Auto Services & Sales Corporation',
-  companyAddress: 'Your business address here',
-  companyPhone: 'Tel. no. / mobile',
-  billTo: 'MUNICIPALITY OF SARANGANI - MDRRMO',
-  billToAddress: 'DAVAO OCCIDENTAL',
-  bsRef: 'APRIL 16-30, 2026',
-  dateBilled: '2026-04-30',
-  terms: '30 DAYS',
-  bsNo: '215',
-  invoiceNo: '000866',
-  dueDate: '2026-05-30',
-  modeOfPayment: 'ACCOUNT RECEIVABLE',
+const emptyHeader = (): BillingHeaderForm => ({
+  companyName: '',
+  companyAddress: '',
+  companyPhone: '',
+  billTo: '',
+  billToAddress: '',
+  bsRef: '',
+  dateBilled: '',
+  terms: '',
+  bsNo: '',
+  invoiceNo: '',
+  dueDate: '',
+  modeOfPayment: '',
 });
+
+function createEmptyLine(dateBilled = ''): BillingLine {
+  return {
+    id: createId(),
+    date: dateBilled.slice(0, 10),
+    description: '',
+    qty: 1,
+    uom: '',
+    unitPrice: 0,
+    priceDiscount: 0,
+    totalRounding: 'half_up_cents',
+  };
+}
 
 function esc(s: string): string {
   return s
@@ -165,8 +102,8 @@ function moneyPhp(n: number) {
 }
 
 export const BillingStatementView: React.FC = () => {
-  const [header, setHeader] = useState<BillingHeaderForm>(() => defaultHeader());
-  const [lines, setLines] = useState<BillingLine[]>(() => createMotorWorldSampleLines());
+  const [header, setHeader] = useState<BillingHeaderForm>(() => emptyHeader());
+  const [lines, setLines] = useState<BillingLine[]>([]);
 
   const enriched = useMemo(() => {
     return lines.map((line) => {
@@ -197,19 +134,12 @@ export const BillingStatementView: React.FC = () => {
   };
 
   const addLine = () => {
-    setLines((prev) => [
-      ...prev,
-      {
-        id: createId(),
-        date: header.dateBilled.slice(0, 10),
-        description: '',
-        qty: 1,
-        uom: 'PC/S',
-        unitPrice: 0,
-        priceDiscount: 0,
-        totalRounding: 'half_up_cents',
-      },
-    ]);
+    setLines((prev) => [...prev, createEmptyLine(header.dateBilled)]);
+  };
+
+  const clearForm = () => {
+    setHeader(emptyHeader());
+    setLines([]);
   };
 
   const removeLine = (id: string) => {
@@ -316,23 +246,15 @@ export const BillingStatementView: React.FC = () => {
         <DashboardSectionHeader
           eyebrow="Documents"
           title="Billing statement"
-          description="Motor World–style materials grid: total price from quantity × unit price, total amount after line discount, optional whole-peso round-up on a line (e.g. Caltex 2T). Use Print for a clean paper layout."
+          description="Enter billing details and material lines manually. Total price = quantity × unit price; total amount = total price minus line discount. Use Print for a clean paper layout."
         />
         <div className="mt-4 flex flex-wrap gap-2">
           <Button type="button" variant="secondary" onClick={printStatement}>
             <Printer className="w-4 h-4 mr-1.5" />
             Print
           </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            className="text-indigo-600"
-            onClick={() => {
-              setHeader(defaultHeader());
-              setLines(createMotorWorldSampleLines());
-            }}
-          >
-            Reset sample
+          <Button type="button" variant="ghost" className="text-indigo-600" onClick={clearForm}>
+            Clear form
           </Button>
         </div>
       </DashboardSurface>
@@ -341,18 +263,21 @@ export const BillingStatementView: React.FC = () => {
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 border-b-2 border-slate-900 pb-4">
           <div className="min-w-0">
             <input
-              className="font-bold text-lg tracking-wide w-full max-w-md border-0 border-b border-dashed border-slate-300 focus:border-indigo-500 focus:ring-0 bg-transparent"
+              className="font-bold text-lg tracking-wide w-full max-w-md border-0 border-b border-dashed border-slate-300 focus:border-indigo-500 focus:ring-0 bg-transparent placeholder:text-slate-400"
+              placeholder="Company name"
               value={header.companyName}
               onChange={(e) => setHeader((h) => ({ ...h, companyName: e.target.value }))}
             />
             <textarea
-              className="mt-2 w-full max-w-md text-sm text-slate-600 border border-slate-200 rounded-md p-2 focus:ring-2 focus:ring-indigo-500 resize-y min-h-[52px]"
+              className="mt-2 w-full max-w-md text-sm text-slate-600 border border-slate-200 rounded-md p-2 focus:ring-2 focus:ring-indigo-500 resize-y min-h-[52px] placeholder:text-slate-400"
               rows={2}
+              placeholder="Business address"
               value={header.companyAddress}
               onChange={(e) => setHeader((h) => ({ ...h, companyAddress: e.target.value }))}
             />
             <input
-              className="mt-1 w-full max-w-md text-sm text-slate-600 border border-slate-200 rounded-md px-2 py-1.5"
+              className="mt-1 w-full max-w-md text-sm text-slate-600 border border-slate-200 rounded-md px-2 py-1.5 placeholder:text-slate-400"
+              placeholder="Tel. no. / mobile"
               value={header.companyPhone}
               onChange={(e) => setHeader((h) => ({ ...h, companyPhone: e.target.value }))}
             />
@@ -363,9 +288,9 @@ export const BillingStatementView: React.FC = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 text-sm mb-6">
           <div className="space-y-3">
-            <Field label="BILL TO" value={header.billTo} onChange={(v) => setHeader((h) => ({ ...h, billTo: v }))} />
-            <Field label="ADDRESS" value={header.billToAddress} onChange={(v) => setHeader((h) => ({ ...h, billToAddress: v }))} />
-            <Field label="BS REF." value={header.bsRef} onChange={(v) => setHeader((h) => ({ ...h, bsRef: v }))} />
+            <Field label="BILL TO" value={header.billTo} placeholder="Customer name" onChange={(v) => setHeader((h) => ({ ...h, billTo: v }))} />
+            <Field label="ADDRESS" value={header.billToAddress} placeholder="Customer address" onChange={(v) => setHeader((h) => ({ ...h, billToAddress: v }))} />
+            <Field label="BS REF." value={header.bsRef} placeholder="Reference" onChange={(v) => setHeader((h) => ({ ...h, bsRef: v }))} />
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Date billed</span>
@@ -376,16 +301,16 @@ export const BillingStatementView: React.FC = () => {
                   onChange={(e) => setHeader((h) => ({ ...h, dateBilled: e.target.value }))}
                 />
               </div>
-              <Field label="TERMS" value={header.terms} onChange={(v) => setHeader((h) => ({ ...h, terms: v }))} />
+              <Field label="TERMS" value={header.terms} placeholder="e.g. 30 DAYS" onChange={(v) => setHeader((h) => ({ ...h, terms: v }))} />
             </div>
           </div>
           <div className="border border-slate-300 bg-slate-50 p-4 space-y-2 text-sm">
-            <SummaryRow label="BS NO." value={header.bsNo} onChange={(v) => setHeader((h) => ({ ...h, bsNo: v }))} />
+            <SummaryRow label="BS NO." value={header.bsNo} placeholder="Billing statement no." onChange={(v) => setHeader((h) => ({ ...h, bsNo: v }))} />
             <div className="flex justify-between gap-4 py-1 border-b border-slate-200">
               <span className="text-[10px] font-bold uppercase text-slate-600">Amount due</span>
               <span className="font-semibold tabular-nums">{moneyPhp(grandTotals.totalAmount)}</span>
             </div>
-            <SummaryRow label="INVOICE NO." value={header.invoiceNo} onChange={(v) => setHeader((h) => ({ ...h, invoiceNo: v }))} />
+            <SummaryRow label="INVOICE NO." value={header.invoiceNo} placeholder="Invoice number" onChange={(v) => setHeader((h) => ({ ...h, invoiceNo: v }))} />
             <div>
               <span className="text-[10px] font-bold uppercase text-slate-600">Due date</span>
               <input
@@ -402,6 +327,7 @@ export const BillingStatementView: React.FC = () => {
             <SummaryRow
               label="MODE OF PAYMENT"
               value={header.modeOfPayment}
+              placeholder="e.g. Cash, Account receivable"
               onChange={(v) => setHeader((h) => ({ ...h, modeOfPayment: v }))}
             />
           </div>
@@ -443,6 +369,13 @@ export const BillingStatementView: React.FC = () => {
               </tr>
             </thead>
             <tbody>
+              {enriched.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="border border-slate-900 px-4 py-8 text-center text-slate-500 text-sm">
+                    No material lines yet. Click <strong>Add line</strong> to enter items.
+                  </td>
+                </tr>
+              )}
               {enriched.map(({ line, totalPrice, totalAmount }) => (
                 <tr key={line.id} className="bg-white hover:bg-slate-50/80">
                   <td className="border border-slate-900 p-0 align-top">
@@ -556,20 +489,30 @@ export const BillingStatementView: React.FC = () => {
 
         <p className="mt-4 text-xs text-slate-500 leading-relaxed">
           <strong>Formulas:</strong> Total price = Qty × Unit price (with line rounding). Total amount = Total price − Price discount.
-          Footer totals sum <strong>Total price</strong>, <strong>Price discount</strong>, and <strong>Total amount</strong> columns. Expected grand
-          total from sample: <strong>PHP 45,809.40</strong>.
+          Footer totals sum the <strong>Total price</strong>, <strong>Price discount</strong>, and <strong>Total amount</strong> columns.
         </p>
       </DashboardSurface>
     </div>
   );
 };
 
-function Field({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+function Field({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
   return (
     <div>
       <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{label}</span>
       <input
-        className="mt-0.5 w-full border border-slate-200 rounded-md px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500"
+        className="mt-0.5 w-full border border-slate-200 rounded-md px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 placeholder:text-slate-400"
+        placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />
@@ -577,12 +520,23 @@ function Field({ label, value, onChange }: { label: string; value: string; onCha
   );
 }
 
-function SummaryRow({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+function SummaryRow({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
   return (
     <div className="flex justify-between gap-4 items-center py-0.5">
       <span className="text-[10px] font-bold uppercase text-slate-600 shrink-0">{label}</span>
       <input
-        className="flex-1 min-w-0 border border-slate-200 rounded px-2 py-1 text-sm bg-white text-right"
+        className="flex-1 min-w-0 border border-slate-200 rounded px-2 py-1 text-sm bg-white text-right placeholder:text-slate-400"
+        placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />
