@@ -32,6 +32,10 @@ export const Login: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [slowHint, setSlowHint] = useState(false);
   const serverLine = useMemo(() => remoteApiDisplayLine(), []);
+  const missingRemoteApi =
+    import.meta.env.PROD &&
+    !USE_FIRESTORE_ADMIN_DATA &&
+    !serverLine;
 
   useEffect(() => {
     if (!loading) {
@@ -128,6 +132,19 @@ export const Login: React.FC = () => {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-5">
+              {missingRemoteApi && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  <p className="font-semibold">API URL is not set on this deployment.</p>
+                  <p className="mt-2 leading-relaxed">
+                    This site was built without <span className="font-mono text-xs">VITE_API_BASE_URL</span>. The
+                    browser is calling <span className="font-mono text-xs">/api/...</span> on Vercel itself, where
+                    there is no API. In Vercel → Project → Settings → Environment Variables (Production), set{' '}
+                    <span className="font-mono text-xs">VITE_API_BASE_URL</span> to your Render API URL (example:{' '}
+                    <span className="font-mono text-[11px] break-all">https://motorworld-api-xxxx.onrender.com</span>
+                    ), then redeploy.
+                  </p>
+                </div>
+              )}
               {error && (
                 <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
                   {error}

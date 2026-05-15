@@ -42,11 +42,13 @@ git push -u origin main
 2. **Root directory:** leave as repo root (where the main `package.json` is).
 3. Replace the project’s **`vercel.json`** with the contents of **`config/vercel.frontend-only.example.json`** from this repo (copy/paste the whole file so Vercel **does not** try to host `/api` itself—the API lives on Render).
 
-4. In **Vercel → Settings → Environment Variables** for **Production**, add:
+4. In **Vercel → Settings → Environment Variables**, add for **Production** (not Preview only—Vite reads Production for your main site):
 
 | Name | Value |
 |------|--------|
 | `VITE_API_BASE_URL` | Your Render API URL, e.g. `https://motorworld-api-xxxx.onrender.com` (no trailing slash) |
+
+   Optional but recommended so the app always talks to your API: set **`VITE_DATA_BACKEND=rest`** (or leave unset; default is REST). If **`VITE_DATA_BACKEND=firebase`** and all Firebase web keys are present, login goes through **Firebase**, not your Render API.
 
 5. Trigger a **new deployment** (Redeploy). When it finishes, open the `.vercel.app` URL and try logging in.
 
@@ -89,9 +91,13 @@ Until this matches the browser address **exactly**, the browser will block login
 | Symptom | Fix |
 |---------|-----|
 | Login never finishes | Confirm `VITE_API_BASE_URL` on Vercel matches the Render URL and you redeployed **after** setting it. |
-| Browser says CORS | `MOTOR_WORLD_ORIGINS` must list the **exact** origin shown in the address bar (scheme + host, optional port). |
+| Red error: “non-JSON” or “Cannot reach” or 404 | Usually **missing or wrong `VITE_API_BASE_URL`**: Vite bakes it in at **build** time—set the var under **Production**, then **Redeploy** (not only “rebuild” from an old deployment). |
+| Amber box: “API URL is not set” (after next deploy) | Same: add `VITE_API_BASE_URL` on Vercel Production and redeploy. |
+| Browser says CORS | `MOTOR_WORLD_ORIGINS` must list the **exact** origin shown in the address bar (scheme + host, optional port). Include both `https://www…` and `https://…` if you use both. |
+| “Invalid credentials” on a **new** Render API | Use seeded admin: `admin@motorworldcorp.com` / `maoningpassword`, then change password. |
 | 404 on `/api` on Vercel | You are still using the old `vercel.json` with API routes—switch to **`config/vercel.frontend-only.example.json`**. |
 | Render sleeps (free tier) | First request after idle can be slow; upgrade plan or use a cron ping to `/api/health`. |
+| Firebase login instead of your API | If `VITE_DATA_BACKEND=firebase` and all Firebase web vars are set, the app uses **Firebase Auth**, not Render. For this guide, use **`VITE_DATA_BACKEND=rest`** (or unset). |
 
 ---
 
