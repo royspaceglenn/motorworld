@@ -3,8 +3,8 @@
 #
 # After deploy: set MOTOR_WORLD_ORIGINS to your Vercel / custom-domain URL(s).
 # Legacy names still work: CORS_ORIGINS, JWT_SECRET.
-# For durable SQLite, add a Disk in the Render dashboard, mount at /data, then set:
-#   SQLITE_DB_PATH=/data/motorworld.sqlite
+# Persistent SQLite (survives redeploys): upgrade to Starter, add Disk mount /data,
+# set SQLITE_DB_PATH=/data/motorworld.sqlite in the dashboard. Code pushes do NOT wipe the DB.
 
 services:
   - type: web

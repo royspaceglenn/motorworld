@@ -11,6 +11,8 @@
     "cache:clean": "node scripts/clean-vite-cache.mjs",
     "desktop:start": "npm run predesktop:dev && npm run desktop:dev",
     "dev": "concurrently \"npm run dev:server\" \"vite\"",
+    "dev:live": "vite",
+    "dev:live:setup": "node scripts/use-live-api-dev.mjs",
     "dev:frontend": "vite",
     "dev:server": "npm run rebuild:server-sqlite && npm --prefix server run dev",
     "build": "vite build",

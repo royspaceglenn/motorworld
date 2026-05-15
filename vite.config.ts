@@ -37,6 +37,9 @@ export default defineConfig(({ mode }) => {
                   '/  ·  Staff app: http://127.0.0.1:' +
                   port +
                   '/aiosystem\n' +
+                  (String(env.VITE_API_BASE_URL || '').trim()
+                    ? '[motor-world] Using remote API: ' + String(env.VITE_API_BASE_URL).replace(/\/$/, '') + ' (same data as production).\n'
+                    : '[motor-world] Local API via Vite proxy (/api → :3001). For production data run: npm run dev:live\n') +
                   'If the UI looks ancient, you were probably hitting a different server — this project avoids port 3000 on purpose.\n',
               );
             });
