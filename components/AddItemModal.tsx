@@ -169,7 +169,10 @@ export const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose, onS
         capitalInput.trim() === ''
           ? Number(formData.unitPrice ?? 0)
           : Number(formData.capitalPrice ?? formData.unitPrice ?? 0);
-      await Promise.resolve(onSave({ ...formData, capitalPrice: cap }));
+      const qtyRaw = qtyInput.trim() === '' ? '0' : sanitizeIntInput(qtyInput);
+      const qtyParsed = parseInt(qtyRaw === '' ? '0' : qtyRaw, 10);
+      const quantity = Number.isNaN(qtyParsed) ? 0 : Math.max(0, qtyParsed);
+      await Promise.resolve(onSave({ ...formData, quantity, capitalPrice: cap }));
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save item.');
@@ -313,13 +316,11 @@ export const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose, onS
                     className="w-full px-3 py-2 bg-white text-slate-900 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder-slate-400 transition-all shadow-sm disabled:bg-slate-50 disabled:text-slate-500"
                     value={qtyInput}
                     onChange={(e) => {
-                      if (editItem) return;
                       const next = sanitizeIntInput(e.target.value);
                       setQtyInput(next);
                       const n = next === '' ? 0 : parseInt(next, 10);
                       setFormData((prev) => ({ ...prev, quantity: Number.isNaN(n) ? 0 : n }));
                     }}
-                    disabled={!!editItem}
                 />
                 </div>
 

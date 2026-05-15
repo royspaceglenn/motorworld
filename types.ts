@@ -7,6 +7,12 @@ export function normalizeStockPurpose(value: unknown): StockPurpose {
   return 'for_sale';
 }
 
+/** POS product search: hide rows whose product category is internal / shop supply. */
+export function isExcludedFromPosProductPicker(category: unknown): boolean {
+  const c = String(category ?? '').trim().toLowerCase();
+  return c === 'supply' || c === 'company supply';
+}
+
 export const STOCK_PURPOSE_META: Record<
   StockPurpose,
   { label: string; hint: string; badgeClass: string }
@@ -278,7 +284,7 @@ export interface Purchase {
   payments: PurchasePaymentRecord[];
   createdAt: string;
   purchaseDiscountMode?: PurchaseDiscountMode;
-  /** When mode is percent: 0–100. When mode is amount: peso value (stored in same field for simplicity). */
+  /** When mode is percent: 0–100. When mode is amount: peso discount per unit; invoice discount = this × sum of line quantities. */
   purchaseDiscountValue?: number;
   /** Sum of qty × unitCost before discount. */
   merchandiseSubtotal?: number;

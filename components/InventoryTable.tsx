@@ -27,7 +27,7 @@ interface InventoryTableProps {
 }
 
 export const InventoryTable: React.FC<InventoryTableProps> = ({ items, onEdit, onRelease, onIssue, onReturn, onAddStock, onDelete, canEdit = true }) => {
-  const colSpan = canEdit ? 9 : 8;
+  const colSpan = canEdit ? 10 : 9;
   return (
     <DashboardSurface className="overflow-hidden">
       <div className="overflow-x-auto">
@@ -44,9 +44,13 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({ items, onEdit, o
                 </span>
               </th>
               <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                <span title="Per unit: retail (SRP) and capital (cost). Unit profit = retail − capital.">
-                  Retail / capital
-                </span>
+                <span title="Total capital (cost) for quantity on hand: qty × cost per unit.">Capital</span>
+              </th>
+              <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                <span title="Total retail value for quantity on hand: qty × SRP per unit.">Retail price</span>
+              </th>
+              <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                <span title="Gross profit on stock: extended retail − extended capital.">Profit</span>
               </th>
               <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
                 <span
@@ -54,13 +58,6 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({ items, onEdit, o
                   title="When this item was first added to the system. Older records may match the last update time."
                 >
                   Added on
-                </span>
-              </th>
-              <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                <span
-                  title="Extended retail = qty × SRP. Extended cost = qty × capital. Stock profit = retail extension − cost extension."
-                >
-                  Retail / cost / profit
                 </span>
               </th>
               {canEdit && <th className="px-6 py-4 text-center text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Actions</th>}
@@ -124,32 +121,28 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({ items, onEdit, o
                         <span className="text-slate-400 text-sm">—</span>
                       )}
                     </td>
-                    <td className="py-4 px-6 text-right text-slate-700">
-                      <div className="font-medium">₱{itemRetailPerUnit(item).toFixed(2)}</div>
-                      <div className="text-xs text-slate-500">₱{itemCapitalPerUnit(item).toFixed(2)}</div>
-                      <div
-                        className={`text-xs font-semibold mt-0.5 ${
-                          itemUnitGrossProfit(item) >= 0 ? 'text-emerald-700' : 'text-rose-600'
-                        }`}
-                      >
-                        Profit ₱{itemUnitGrossProfit(item).toFixed(2)}/unit
-                      </div>
+                    <td
+                      className="py-4 px-6 text-right font-medium text-slate-700 tabular-nums"
+                      title={`Per unit: ₱${itemCapitalPerUnit(item).toFixed(2)} × ${item.quantity} ${item.unit || 'pcs'}`}
+                    >
+                      ₱{(item.quantity * itemCapitalPerUnit(item)).toFixed(2)}
+                    </td>
+                    <td
+                      className="py-4 px-6 text-right font-medium text-slate-800 tabular-nums"
+                      title={`Per unit: ₱${itemRetailPerUnit(item).toFixed(2)} × ${item.quantity} ${item.unit || 'pcs'}`}
+                    >
+                      ₱{(item.quantity * itemRetailPerUnit(item)).toFixed(2)}
+                    </td>
+                    <td
+                      className={`py-4 px-6 text-right font-semibold tabular-nums ${
+                        itemStockGrossProfit(item) >= 0 ? 'text-emerald-700' : 'text-rose-600'
+                      }`}
+                      title={`Per unit profit: ₱${itemUnitGrossProfit(item).toFixed(2)} × ${item.quantity} ${item.unit || 'pcs'}`}
+                    >
+                      ₱{itemStockGrossProfit(item).toFixed(2)}
                     </td>
                     <td className="py-4 px-6 text-right text-sm text-slate-600 whitespace-nowrap" title={item.createdAt ?? item.lastUpdated}>
                       {formatItemAddedOn(item)}
-                    </td>
-                    <td className="py-4 px-6 text-right font-semibold text-slate-800">
-                      <div>₱{(item.quantity * itemRetailPerUnit(item)).toFixed(2)}</div>
-                      <div className="text-xs font-normal text-slate-500">
-                        ₱{(item.quantity * itemCapitalPerUnit(item)).toFixed(2)}
-                      </div>
-                      <div
-                        className={`text-xs font-semibold mt-0.5 ${
-                          itemStockGrossProfit(item) >= 0 ? 'text-emerald-700' : 'text-rose-600'
-                        }`}
-                      >
-                        Profit ₱{itemStockGrossProfit(item).toFixed(2)}
-                      </div>
                     </td>
                     {canEdit && (
                       <td className="py-4 px-6 text-center">

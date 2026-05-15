@@ -1147,11 +1147,13 @@ export const createPurchase = onCall({ region: REGION }, async (request) => {
       });
     }
 
+    const totalReceiveQuantity = staged.reduce((s, row) => s + row.quantity, 0);
     let discountTotal = 0;
     if (purchaseDiscountMode === 'percent' && purchaseDiscountValue > 0) {
       discountTotal = (merchandiseSubtotal * Math.min(100, purchaseDiscountValue)) / 100;
     } else if (purchaseDiscountMode === 'amount' && purchaseDiscountValue > 0) {
-      discountTotal = Math.min(merchandiseSubtotal, purchaseDiscountValue);
+      const rawAmountDiscount = purchaseDiscountValue * totalReceiveQuantity;
+      discountTotal = Math.min(merchandiseSubtotal, rawAmountDiscount);
     }
     discountTotal = Math.min(discountTotal, merchandiseSubtotal);
     const netMerchandiseCost = merchandiseSubtotal - discountTotal;

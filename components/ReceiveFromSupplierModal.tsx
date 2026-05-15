@@ -109,13 +109,15 @@ export const ReceiveFromSupplierModal: React.FC<ReceiveFromSupplierModalProps> =
   };
 
   const validLines = lines.filter((l) => l.itemId && l.quantity > 0 && l.unitCost >= 0);
+  const totalReceiveQuantity = validLines.reduce((s, l) => s + l.quantity, 0);
   const merchandiseSubtotal = lines.reduce((s, l) => s + (l.total ?? 0), 0);
   const expectedRevenue = validLines.reduce((s, l) => s + l.quantity * (l.sellingPrice ?? 0), 0);
   let discountTotal = 0;
   if (purchaseDiscountMode === 'percent' && purchaseDiscountValue > 0) {
     discountTotal = merchandiseSubtotal * (Math.min(100, purchaseDiscountValue) / 100);
   } else if (purchaseDiscountMode === 'amount' && purchaseDiscountValue > 0) {
-    discountTotal = Math.min(merchandiseSubtotal, purchaseDiscountValue);
+    const rawAmountDiscount = purchaseDiscountValue * totalReceiveQuantity;
+    discountTotal = Math.min(merchandiseSubtotal, rawAmountDiscount);
   }
   const netMerchandiseCost = merchandiseSubtotal - discountTotal;
   const expectedNetProfit = expectedRevenue - netMerchandiseCost;
@@ -296,7 +298,7 @@ export const ReceiveFromSupplierModal: React.FC<ReceiveFromSupplierModalProps> =
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">Supplier discount (whole receive)</label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Supplier discount</label>
               <div className="flex flex-wrap gap-3 items-end">
                 <select
                   className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500"
@@ -305,12 +307,12 @@ export const ReceiveFromSupplierModal: React.FC<ReceiveFromSupplierModalProps> =
                 >
                   <option value="none">No discount</option>
                   <option value="percent">Percentage off merchandise</option>
-                  <option value="amount">Fixed amount off (₱)</option>
+                  <option value="amount">Fixed amount off per unit (₱)</option>
                 </select>
                 {purchaseDiscountMode !== 'none' && (
                   <div className="flex-1 min-w-[120px]">
                     <label className="block text-xs text-slate-500 mb-0.5">
-                      {purchaseDiscountMode === 'percent' ? 'Percent (0–100)' : 'Amount (₱)'}
+                      {purchaseDiscountMode === 'percent' ? 'Percent (0–100)' : 'Amount per unit (₱)'}
                     </label>
                     <input
                       type="number"
@@ -325,6 +327,12 @@ export const ReceiveFromSupplierModal: React.FC<ReceiveFromSupplierModalProps> =
               </div>
               <p className="text-xs text-slate-500 mt-1">
                 Discount lowers the net cost of this receive; estimated profit uses your selling prices vs. net cost.
+                {purchaseDiscountMode === 'amount' && (
+                  <span className="block mt-0.5">
+                    Fixed amount is <strong>per unit</strong> (multiplied by total quantity across all valid lines,
+                    capped at merchandise subtotal).
+                  </span>
+                )}
               </p>
             </div>
 

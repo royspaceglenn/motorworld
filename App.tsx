@@ -405,23 +405,8 @@ const App: React.FC = () => {
         })
         .then((updated) => {
           setItems((prev) => prev.map((i) => (i.id === itemToEdit.id ? (norm(updated) as InventoryItem) : i)));
-          if (itemData.quantity !== undefined && itemData.quantity !== itemToEdit.quantity) {
-            const diff = itemData.quantity - itemToEdit.quantity;
-            const cap = itemData.capitalPrice ?? itemToEdit.capitalPrice ?? itemData.unitPrice ?? itemToEdit.unitPrice;
-            const transaction: Transaction = {
-              id: crypto.randomUUID(),
-              itemId: itemToEdit.id,
-              itemName: itemData.name || itemToEdit.name,
-              type: 'ADJUSTMENT',
-              quantityChange: diff,
-              unitPriceAtTime: cap,
-              totalValue: diff * cap,
-              timestamp: now,
-              note: 'Manual adjustment via Edit',
-              receiptNumber: itemData.receiptNumber,
-            };
-            setTransactions((prev) => [transaction, ...prev]);
-          }
+          // Server PUT already records ADJUSTMENT when quantity changes; refresh ledger to avoid duplicates.
+          fetchItemsAndTransactions();
           setItemToEdit(undefined);
         })
         .catch((err) => {

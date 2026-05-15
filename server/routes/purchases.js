@@ -67,12 +67,14 @@ router.post('/', requireAdmin, async (req, res) => {
       });
     }
 
+    const totalReceiveQuantity = normalizedLines.reduce((s, l) => s + l.quantity, 0);
     let discountTotal = 0;
     if (purchaseDiscountMode === 'percent' && purchaseDiscountValue > 0) {
       const pct = Math.min(100, purchaseDiscountValue);
       discountTotal = merchandiseSubtotal * (pct / 100);
     } else if (purchaseDiscountMode === 'amount' && purchaseDiscountValue > 0) {
-      discountTotal = Math.min(merchandiseSubtotal, purchaseDiscountValue);
+      const rawAmountDiscount = purchaseDiscountValue * totalReceiveQuantity;
+      discountTotal = Math.min(merchandiseSubtotal, rawAmountDiscount);
     }
     discountTotal = Math.min(discountTotal, merchandiseSubtotal);
     const netMerchandiseCost = merchandiseSubtotal - discountTotal;

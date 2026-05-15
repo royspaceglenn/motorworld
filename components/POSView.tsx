@@ -1,5 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { InventoryItem, Person, Vehicle, Transaction, normalizeStockPurpose } from '../types';
+import {
+  InventoryItem,
+  Person,
+  Vehicle,
+  Transaction,
+  normalizeStockPurpose,
+  isExcludedFromPosProductPicker,
+} from '../types';
 import { itemCapitalPerUnit, itemRetailPerUnit } from '../lib/inventoryPricing';
 import { personsApi, vehiclesApi, transactionsApi } from '../lib/api/adminData';
 import { buildReceiptHtml } from './ReceiptPrint';
@@ -124,7 +131,12 @@ export const POSView: React.FC<POSViewProps> = ({
   );
   const itemSuggestions = useMemo(
     () =>
-      items.filter((i) => (i.quantity ?? 0) > 0 && normalizeStockPurpose(i.stockPurpose) === 'for_sale'),
+      items.filter(
+        (i) =>
+          (i.quantity ?? 0) > 0 &&
+          normalizeStockPurpose(i.stockPurpose) === 'for_sale' &&
+          !isExcludedFromPosProductPicker(i.category)
+      ),
     [items]
   );
 

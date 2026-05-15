@@ -7,7 +7,8 @@ export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     const devServerPort = Number(env.VITE_DEV_SERVER_PORT || 5174);
     return {
-      base: './',
+      // Vercel serves nested routes (/aiosystem); relative base breaks asset URLs there. Electron/local use ./.
+      base: process.env.VERCEL ? '/' : './',
       server: {
         port: devServerPort,
         strictPort: true,
