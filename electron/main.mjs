@@ -139,7 +139,7 @@ function viewerUrl() {
 
 function adminUrl() {
   const p = getViteDevServerPort();
-  return `http://127.0.0.1:${p}/`;
+  return `http://127.0.0.1:${p}/aiosystem`;
 }
 
 function getDesktopDataRoot() {
@@ -389,7 +389,7 @@ async function loadAdminWindow(window) {
     return;
   }
 
-  await window.loadFile(path.join(getDistDir(), 'index.html'));
+  await window.loadFile(path.join(getDistDir(), 'index.html'), { hash: '/aiosystem' });
 }
 
 async function loadViewerWindow(window) {

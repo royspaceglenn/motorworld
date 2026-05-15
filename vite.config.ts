@@ -31,6 +31,11 @@ export default defineConfig(({ mode }) => {
               console.log(
                 `\n[motor-world] Vite is bound to port ${port} in this folder (see VITE_DEV_SERVER_PORT in .env). Electron opens this in dev.\n` +
                   `[motor-world] VITE_DATA_BACKEND=${backend} → ${backend === 'firebase' ? 'Firebase Auth + Firestore (login screen).' : 'local REST + SQLite; Vite proxies /api to port 3001 — use `npm run dev` so API + UI both start.'}\n` +
+                  'Public landing: http://127.0.0.1:' +
+                  port +
+                  '/  ·  Staff app: http://127.0.0.1:' +
+                  port +
+                  '/aiosystem\n' +
                   'If the UI looks ancient, you were probably hitting a different server — this project avoids port 3000 on purpose.\n',
               );
             });

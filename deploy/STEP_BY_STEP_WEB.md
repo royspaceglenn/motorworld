@@ -68,6 +68,8 @@ git push -u origin main
 
 6. Trigger a **new deployment** (Redeploy). When it finishes, open the `.vercel.app` URL and try logging in.
 
+**Public vs staff URLs:** The site root **`/`** is a public landing page (company info + Facebook). The sales / POS / admin workspace lives only at **`/aiosystem`** — share that path internally (bookmark); it is intentionally not a button on the landing page.
+
 **First login (SQLite on Render, default seed user):**
 
 - Email: `admin@motorworldcorp.com`  
