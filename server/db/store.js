@@ -7,8 +7,10 @@ import {
   FIREBASE_SIGNIN_EMAIL,
   SINGLE_ADMIN_USERNAME,
 } from '../lib/adminLogin.js';
-import * as collectionsBackend from './collectionsBackend.js';
+import * as collectionsBackend from './shopCollections.js';
 import { isEmergencyDbBypass } from '../lib/emergencyAuth.js';
+import { DEFAULT_SHOP_ID, SHOP_IDS } from '../lib/shops.js';
+import { getActiveShopId } from '../lib/shopContext.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -54,9 +56,15 @@ function consolidateUsersToSingleAdmin(users) {
       const isNewDefault = bcrypt.compareSync(DEFAULT_REST_ADMIN_PASSWORD, row.password_hash);
       const isOldDefault = bcrypt.compareSync('admin2026', row.password_hash);
       if (!isNewDefault && isOldDefault) {
-        return [{ ...row, password_hash: bcrypt.hashSync(DEFAULT_REST_ADMIN_PASSWORD, 10) }];
+        return [
+          {
+            ...row,
+            password_hash: bcrypt.hashSync(DEFAULT_REST_ADMIN_PASSWORD, 10),
+            shops: shopsForUser(row),
+          },
+        ];
       }
-      return [row];
+      return [{ ...row, shops: shopsForUser(row) }];
     }
     if (legacyEmails.has(e)) {
       return [
@@ -66,6 +74,7 @@ function consolidateUsersToSingleAdmin(users) {
           password_hash: bcrypt.hashSync(DEFAULT_REST_ADMIN_PASSWORD, 10),
           display_name: users[0].display_name || 'Administrator',
           role: 'admin',
+          shops: [...SHOP_IDS],
         },
       ];
     }
@@ -86,6 +95,7 @@ function consolidateUsersToSingleAdmin(users) {
       display_name: keep?.display_name || 'Administrator',
       role: 'admin',
       created_at: keep?.created_at || new Date().toISOString(),
+      shops: [...SHOP_IDS],
     },
   ];
 }
@@ -227,6 +237,7 @@ function transactionToApi(tx) {
     chequeClearedAt: tx.cheque_cleared_at ?? tx.chequeClearedAt ?? null,
     editedAt: tx.edited_at ?? tx.editedAt ?? null,
     editNote: tx.edit_note ?? tx.editNote ?? null,
+    shopId: tx.shop_id ?? tx.shopId ?? null,
   };
 }
 
@@ -592,6 +603,9 @@ export async function createUser(user) {
     display_name: user.display_name,
     role: user.role || 'admin',
     created_at: user.created_at || nowIso(),
+    ...(Array.isArray(user.shops) && user.shops.length
+      ? { shops: user.shops.map((s) => String(s).trim()).filter((s) => SHOP_IDS.includes(s)) }
+      : { shops: [DEFAULT_SHOP_ID] }),
   });
   await collectionsBackend.writeCollection(COLLECTIONS.users, users);
   return await getUserById(users[0].id);
@@ -614,6 +628,19 @@ export async function deleteUser(id) {
   return changed;
 }
 
+export function shopsForUser(user) {
+  if (!user) return [DEFAULT_SHOP_ID];
+  const email = String(user.email || '').trim().toLowerCase();
+  /** Seeded primary admin always manages every logical store (DB may still have a legacy single `shops` entry). */
+  if (email === String(DEFAULT_REST_ADMIN_EMAIL).trim().toLowerCase()) {
+    return [...SHOP_IDS];
+  }
+  if (Array.isArray(user.shops) && user.shops.length) {
+    return user.shops.map((s) => String(s).trim()).filter((s) => SHOP_IDS.includes(s));
+  }
+  return [DEFAULT_SHOP_ID];
+}
+
 /** Public session shape for Express; legacy `overseer` rows are treated as admin. */
 export function mapUserToSession(user) {
   if (!user) return null;
@@ -622,6 +649,7 @@ export function mapUserToSession(user) {
     email: user.email,
     displayName: user.display_name,
     role: 'admin',
+    shops: shopsForUser(user),
   };
 }
 
@@ -774,6 +802,7 @@ export async function addTransaction(tx) {
     cheque_cleared_at: tx.chequeClearedAt ?? tx.cheque_cleared_at ?? null,
     edited_at: tx.editedAt ?? tx.edited_at ?? null,
     edit_note: tx.editNote ?? tx.edit_note ?? null,
+    shop_id: tx.shopId ?? tx.shop_id ?? getActiveShopId(),
   };
   transactions.unshift(raw);
   await collectionsBackend.writeCollection(COLLECTIONS.transactions, transactions);
@@ -1345,6 +1374,11 @@ export async function createSoa(data) {
 
 async function enrichSoa(soa) {
   const loan = await getLoanByTransactionId(soa.transactionId);
+  let shopId = loan?.shopId ?? null;
+  if (shopId == null) {
+    const tx = await getTransactionById(soa.transactionId);
+    shopId = tx?.shopId ?? null;
+  }
   const payments = loan
     ? [
         ...(loan.downPayment > 0
@@ -1374,6 +1408,7 @@ async function enrichSoa(soa) {
 
   return {
     ...soa,
+    shopId,
     paymentsMade: payments,
     totalPaid,
     remainingBalance,
@@ -1454,18 +1489,25 @@ export async function getLoans({ status, customerName, limit, offset = 0 } = {})
     loans = loans.slice(offset, offset + limit);
   }
   return await Promise.all(
-    loans.map(async (loan) => ({
-      ...loan,
-      payments: await getLoanPayments(loan.id),
-    }))
+    loans.map(async (loan) => {
+      const saleTx = loan.transactionId ? await getTransactionById(loan.transactionId) : null;
+      return {
+        ...loan,
+        shopId: saleTx?.shopId ?? null,
+        payments: await getLoanPayments(loan.id),
+      };
+    })
   );
 }
 
 export async function getLoanById(id) {
   const loan = (await collectionsBackend.readCollection(COLLECTIONS.loans, [])).find((entry) => entry.id === id);
   if (!loan) return null;
+  const tid = loan.transaction_id ?? loan.transactionId;
+  const saleTx = tid ? await getTransactionById(tid) : null;
   return {
     ...loanToApi(loan),
+    shopId: saleTx?.shopId ?? null,
     payments: await getLoanPayments(id),
   };
 }

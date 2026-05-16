@@ -8,6 +8,7 @@ import { logActivity } from '../services/activityLogger.js';
 import { normalizeLocalLogin } from '../lib/adminLogin.js';
 import { EMERGENCY_USER_ID, tryEmergencyStaticCredentials } from '../lib/emergencyAuth.js';
 import { getAppSigningSecretForTokens } from '../lib/secrets.js';
+import { SHOP_IDS } from '../lib/shops.js';
 
 const router = express.Router();
 
@@ -26,8 +27,12 @@ function signToken(user, { emergency = false } = {}) {
     role: session.role,
     email: session.email,
     displayName: session.displayName,
+    shops: session.shops || [...SHOP_IDS],
   };
-  if (emergency) body.emergency = true;
+  if (emergency) {
+    body.emergency = true;
+    body.shops = [...SHOP_IDS];
+  }
   return jwt.sign(body, getAppSigningSecretForTokens(), { expiresIn: process.env.JWT_EXPIRES_IN || '7d' });
 }
 

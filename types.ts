@@ -70,6 +70,8 @@ export interface PosLineItem {
 
 export interface Transaction {
   id: string;
+  /** Issuing store for REST multi-store receipts (missing on legacy rows → Motor World branding). */
+  shopId?: string | null;
   itemId?: string | null;
   itemName: string;
   type: TransactionType;
@@ -139,6 +141,8 @@ export type SoaPaymentStatus = 'Unpaid' | 'Partially Paid' | 'Paid';
 export interface StatementOfAccount {
   id: string;
   transactionId: string;
+  /** From linked sale transaction (REST multi-store). */
+  shopId?: string | null;
   customerName: string;
   itemId?: string | null;
   itemName: string;
@@ -171,6 +175,8 @@ export type PaymentSchedule = 'weekly' | 'monthly';
 export interface Loan {
   id: string;
   transactionId: string;
+  /** From linked sale transaction (REST multi-store). */
+  shopId?: string | null;
   customerName: string;
   totalAmount: number;
   downPayment: number;

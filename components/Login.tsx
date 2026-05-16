@@ -6,8 +6,16 @@ import { COMPANY_DISPLAY_NAME } from '../lib/company';
 import { User, Lock, Smartphone, ArrowRight, Shield } from 'lucide-react';
 import { Button } from './ui/Button';
 import { DashboardSurface } from './ui/DashboardPrimitives';
+import { SHOPS } from '../lib/shops';
 
 function remoteApiDisplayLine(): string | null {
+  if (typeof window !== 'undefined' && import.meta.env.DEV) {
+    const { hostname, port } = window.location;
+    const devUiPort = String(import.meta.env.VITE_DEV_SERVER_PORT || '5174');
+    const isLoopback = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
+    // Matches `getApiBase()` in client: LAN → same-origin `/api` proxy, not `VITE_API_BASE_URL`.
+    if (port === devUiPort && !isLoopback) return null;
+  }
   const raw =
     (typeof window !== 'undefined' &&
       (window.motorWorldDesktop?.apiBaseUrl || window.efcpDesktop?.apiBaseUrl)) ||
@@ -25,7 +33,7 @@ function remoteApiDisplayLine(): string | null {
 }
 
 export const Login: React.FC = () => {
-  const { login } = useAuth();
+  const { login, pendingShopLogin, completeShopSelection, cancelPendingShopLogin } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -114,108 +122,143 @@ export const Login: React.FC = () => {
           </DashboardSurface>
 
           <DashboardSurface className="p-6 sm:p-8">
-            <div className="mb-8">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-600">Sign in</p>
-              <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">Welcome back</h2>
-              <p className="mt-2 text-sm text-slate-600">
-                {USE_FIRESTORE_ADMIN_DATA
-                  ? 'Use the Firebase email and password from your administrator.'
-                  : 'Use the email and password for your Motor World account. The API checks them and issues a session token.'}
-              </p>
-              {serverLine && (
-                <p className="mt-2 text-xs leading-relaxed text-slate-500">
-                  This copy is set up for your organization&apos;s server{' '}
-                  <span className="font-mono text-[11px] text-slate-700">{serverLine}</span>. Use the credentials your
-                  administrator gave you.
-                </p>
-              )}
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-5">
-              {missingRemoteApi && (
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                  <p className="font-semibold">API URL is not set on this deployment.</p>
-                  <p className="mt-2 leading-relaxed">
-                    This site was built without <span className="font-mono text-xs">VITE_API_BASE_URL</span>. The
-                    browser is calling <span className="font-mono text-xs">/api/...</span> on Vercel itself, where
-                    there is no API. In Vercel → Project → Settings → Environment Variables (Production), set{' '}
-                    <span className="font-mono text-xs">VITE_API_BASE_URL</span> to your Render API URL (example:{' '}
-                    <span className="font-mono text-[11px] break-all">https://motorworld-api-xxxx.onrender.com</span>
-                    ), then redeploy.
+            {pendingShopLogin ? (
+              <div>
+                <div className="mb-8">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-600">Choose store</p>
+                  <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">Which location are you managing?</h2>
+                  <p className="mt-2 text-sm text-slate-600">
+                    Your account can access more than one store. Pick the workspace you want to open now. You can switch
+                    later from the top bar.
                   </p>
                 </div>
-              )}
-              {error && (
-                <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
-                  {error}
+                <div className="space-y-3">
+                  {SHOPS.filter((s) => (pendingShopLogin.user.shops || []).includes(s.id)).map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => completeShopSelection(s.id)}
+                      className="flex w-full flex-col rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-left transition-colors hover:border-indigo-300 hover:bg-indigo-50/60"
+                    >
+                      <span className="text-sm font-semibold text-slate-900">{s.shortLabel}</span>
+                      <span className="mt-1 text-xs leading-relaxed text-slate-600">{s.label}</span>
+                    </button>
+                  ))}
                 </div>
-              )}
-
-              <div>
-                <label htmlFor="username" className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Email
-                </label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input
-                    id="username"
-                    type="text"
-                    autoComplete="username"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    placeholder="Email address"
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-10 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
+                <button
+                  type="button"
+                  onClick={cancelPendingShopLogin}
+                  className="mt-6 text-sm font-medium text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline"
+                >
+                  Back to sign in
+                </button>
               </div>
-
-              <div>
-                <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Password
-                </label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input
-                    id="password"
-                    type="password"
-                    autoComplete="current-password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter password"
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-10 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
+            ) : (
+              <>
+                <div className="mb-8">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-600">Sign in</p>
+                  <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">Welcome back</h2>
+                  <p className="mt-2 text-sm text-slate-600">
+                    {USE_FIRESTORE_ADMIN_DATA
+                      ? 'Use the Firebase email and password from your administrator.'
+                      : 'Use the email and password for your Motor World account. The API checks them and issues a session token.'}
+                  </p>
+                  {serverLine && (
+                    <p className="mt-2 text-xs leading-relaxed text-slate-500">
+                      This copy is set up for your organization&apos;s server{' '}
+                      <span className="font-mono text-[11px] text-slate-700">{serverLine}</span>. Use the credentials your
+                      administrator gave you.
+                    </p>
+                  )}
                 </div>
-              </div>
 
-              <Button type="submit" fullWidth disabled={loading}>
-                {loading ? 'Signing in...' : 'Sign in'}
-              </Button>
-              {loading && slowHint && (
-                <p className="text-center text-xs leading-relaxed text-slate-500">
-                  Still waiting on the server. If this is the first request in a while, the API or database may be waking up—try again in a moment.
-                </p>
-              )}
-            </form>
+                <form onSubmit={handleSubmit} className="space-y-5">
+                  {missingRemoteApi && (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                      <p className="font-semibold">API URL is not set on this deployment.</p>
+                      <p className="mt-2 leading-relaxed">
+                        This site was built without <span className="font-mono text-xs">VITE_API_BASE_URL</span>. The
+                        browser is calling <span className="font-mono text-xs">/api/...</span> on Vercel itself, where
+                        there is no API. In Vercel → Project → Settings → Environment Variables (Production), set{' '}
+                        <span className="font-mono text-xs">VITE_API_BASE_URL</span> to your Render API URL (example:{' '}
+                        <span className="font-mono text-[11px] break-all">https://motorworld-api-xxxx.onrender.com</span>
+                        ), then redeploy.
+                      </p>
+                    </div>
+                  )}
+                  {error && (
+                    <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
+                      {error}
+                    </div>
+                  )}
 
-            <div className="mt-8 border-t border-slate-100 pt-6">
-              <p className="mb-3 text-xs font-medium uppercase tracking-[0.22em] text-slate-400">Help</p>
-              {USE_FIRESTORE_ADMIN_DATA ? (
-                <p className="text-xs text-slate-500">
-                  Use the Firebase email and password your administrator assigned.
-                </p>
-              ) : import.meta.env.DEV ? (
-                <p className="text-xs text-slate-500">
-                  Local seed user: <span className="font-mono text-slate-800">{DEFAULT_REST_ADMIN_EMAIL}</span>. Default
-                  password is documented in <span className="font-mono">server/README.md</span> (not shown in production
-                  builds).
-                </p>
-              ) : (
-                <p className="text-xs text-slate-500">
-                  Use the account your administrator created. If you cannot sign in, ask an admin to verify your user or
-                  reset your password.
-                </p>
-              )}
-            </div>
+                  <div>
+                    <label htmlFor="username" className="mb-1.5 block text-sm font-medium text-slate-700">
+                      Email
+                    </label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <input
+                        id="username"
+                        type="text"
+                        autoComplete="username"
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        placeholder="Email address"
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-10 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-slate-700">
+                      Password
+                    </label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <input
+                        id="password"
+                        type="password"
+                        autoComplete="current-password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Enter password"
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-10 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <Button type="submit" fullWidth disabled={loading}>
+                    {loading ? 'Signing in...' : 'Sign in'}
+                  </Button>
+                  {loading && slowHint && (
+                    <p className="text-center text-xs leading-relaxed text-slate-500">
+                      Still waiting on the server. If this is the first request in a while, the API or database may be waking up—try again in a moment.
+                    </p>
+                  )}
+                </form>
+
+                <div className="mt-8 border-t border-slate-100 pt-6">
+                  <p className="mb-3 text-xs font-medium uppercase tracking-[0.22em] text-slate-400">Help</p>
+                  {USE_FIRESTORE_ADMIN_DATA ? (
+                    <p className="text-xs text-slate-500">
+                      Use the Firebase email and password your administrator assigned.
+                    </p>
+                  ) : import.meta.env.DEV ? (
+                    <p className="text-xs text-slate-500">
+                      Local seed user: <span className="font-mono text-slate-800">{DEFAULT_REST_ADMIN_EMAIL}</span>. Default
+                      password is documented in <span className="font-mono">server/README.md</span> (not shown in production
+                      builds).
+                    </p>
+                  ) : (
+                    <p className="text-xs text-slate-500">
+                      Use the account your administrator created. If you cannot sign in, ask an admin to verify your user or
+                      reset your password.
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
           </DashboardSurface>
         </div>
       </div>

@@ -825,3 +825,9 @@ export const notificationsApi = {
     return { success: true as const };
   },
 };
+
+export const systemApi = {
+  clearStoreData: async (_shopId: string) => {
+    throw new Error('Clearing store data requires the REST API backend (SQLite), not Firebase.');
+  },
+};

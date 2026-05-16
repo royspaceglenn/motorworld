@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { usersApi, type ApiUser } from '../lib/api/adminData';
+import { usersApi, systemApi, USE_FIRESTORE_ADMIN_DATA, type ApiUser } from '../lib/api/adminData';
+import { getStoredActiveShopId } from '../lib/api/client';
+import { SHOPS } from '../lib/shops';
 import { UserPlus, Trash2, Users, KeyRound } from 'lucide-react';
 
 export const ManageUsersView: React.FC = () => {
@@ -17,6 +19,9 @@ export const ManageUsersView: React.FC = () => {
   const [resetConfirm, setResetConfirm] = useState('');
   const [resetError, setResetError] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
+  const [clearShopId, setClearShopId] = useState(() => getStoredActiveShopId());
+  const [clearBusy, setClearBusy] = useState(false);
+  const [clearMsg, setClearMsg] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -222,6 +227,61 @@ export const ManageUsersView: React.FC = () => {
           </ul>
         )}
       </div>
+
+      {!USE_FIRESTORE_ADMIN_DATA && (
+        <div className="mt-8 rounded-xl border border-red-200 bg-red-50/60 p-6">
+          <h3 className="text-sm font-bold uppercase tracking-wide text-red-900">Danger zone — clear one store</h3>
+          <p className="mt-2 text-sm text-red-800/90">
+            Removes inventory, transactions, customers, vehicles, receivables, document archives, and related data for the
+            selected store. <strong>User accounts are kept.</strong> This cannot be undone.
+          </p>
+          <div className="mt-4 flex flex-wrap items-end gap-3">
+            <div>
+              <label className="block text-xs font-semibold uppercase text-red-900/80">Store to clear</label>
+              <select
+                className="mt-1 rounded-lg border border-red-300 bg-white px-3 py-2 text-sm text-slate-900"
+                value={clearShopId}
+                onChange={(e) => setClearShopId(e.target.value)}
+              >
+                {SHOPS.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="button"
+              disabled={clearBusy}
+              onClick={async () => {
+                const label = SHOPS.find((s) => s.id === clearShopId)?.shortLabel ?? clearShopId;
+                if (
+                  !window.confirm(
+                    `Permanently delete ALL business data for "${label}"?\n\nType mentally: this cannot be undone.`
+                  )
+                ) {
+                  return;
+                }
+                setClearBusy(true);
+                setClearMsg(null);
+                try {
+                  const res = await systemApi.clearStoreData(clearShopId);
+                  setClearMsg(`Cleared ${res.collectionsRemoved} data bucket(s). Reloading…`);
+                  window.setTimeout(() => window.location.reload(), 800);
+                } catch (e) {
+                  setClearMsg(e instanceof Error ? e.message : 'Clear failed.');
+                } finally {
+                  setClearBusy(false);
+                }
+              }}
+              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              {clearBusy ? 'Clearing…' : 'Clear selected store'}
+            </button>
+          </div>
+          {clearMsg && <p className="mt-3 text-sm text-red-900">{clearMsg}</p>}
+        </div>
+      )}
 
       {resetUser && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/40 p-4">

@@ -24,6 +24,7 @@ export const suppliersApi = data.suppliersApi;
 export const purchasesApi = data.purchasesApi;
 export const paymentJournalApi = data.paymentJournalApi;
 export const documentArchivesApi = data.documentArchivesApi;
+export const systemApi = data.systemApi;
 
 export type {
   ApiUser,

@@ -29,6 +29,74 @@ declare global {
 const TOKEN_KEY = 'motorworld_auth_token';
 const TOKEN_KEY_LEGACY = 'efcp_auth_token';
 
+/** Session-scoped active store for REST API (`X-Motor-Shop-Id`). Each browser tab can use a different value. */
+export const ACTIVE_SHOP_SESSION_KEY = 'motorworld_active_shop_id';
+
+/** Query param for deep-linking a tab to a store (works alongside per-tab sessionStorage). */
+export const ACTIVE_SHOP_URL_PARAM = 'shop';
+
+/** Read `?shop=motorworld|ecfp` from the top-level URL (and a limited `#/...?shop=` hash form). */
+export function readShopIdFromUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const top = new URL(window.location.href);
+    const q = top.searchParams.get(ACTIVE_SHOP_URL_PARAM)?.trim().toLowerCase();
+    if (q === 'ecfp' || q === 'motorworld') return q;
+    const hash = window.location.hash || '';
+    const m = hash.match(/[?&]shop=(motorworld|ecfp)(?:&|#|$)/i);
+    if (m) return m[1].toLowerCase();
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+function syncShopQueryParam(shopId: string) {
+  if (typeof window === 'undefined') return;
+  try {
+    const u = new URL(window.location.href);
+    u.searchParams.set(ACTIVE_SHOP_URL_PARAM, shopId);
+    window.history.replaceState(window.history.state, '', `${u.pathname}${u.search}${u.hash}`);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Same tab + query string, for opening another store in a new browser tab. */
+export function buildOperationsUrlWithShop(shopId: string): string {
+  const s = shopId === 'ecfp' ? 'ecfp' : 'motorworld';
+  if (typeof window === 'undefined') return '';
+  try {
+    const u = new URL(window.location.href);
+    u.searchParams.set(ACTIVE_SHOP_URL_PARAM, s);
+    return u.toString();
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Resolved store for this tab: sessionStorage first, then `?shop=` / hash, then default.
+ * Session wins over URL so an explicit switch in this tab is not overridden by a stale bookmark query.
+ */
+export function getStoredActiveShopId(): string {
+  if (typeof window === 'undefined') return 'motorworld';
+  const raw = sessionStorage.getItem(ACTIVE_SHOP_SESSION_KEY)?.trim().toLowerCase();
+  if (raw === 'ecfp' || raw === 'motorworld') return raw;
+  const fromUrl = readShopIdFromUrl();
+  if (fromUrl) return fromUrl;
+  return 'motorworld';
+}
+
+export function setStoredActiveShopId(shopId: string) {
+  if (typeof window === 'undefined') return;
+  const s = String(shopId || '').trim().toLowerCase();
+  if (s === 'ecfp' || s === 'motorworld') {
+    sessionStorage.setItem(ACTIVE_SHOP_SESSION_KEY, s);
+    syncShopQueryParam(s);
+  }
+}
+
 /** Thrown by {@link request} when the server returns a non-2xx status (includes 401). */
 export class HttpError extends Error {
   readonly status: number;
@@ -49,12 +117,19 @@ function getApiBase(): string {
   if (typeof window !== 'undefined' && window.location) {
     const { hostname, port } = window.location;
     const devUiPort = String(import.meta.env.VITE_DEV_SERVER_PORT || '5174');
-    const viteDev =
-      (hostname === 'localhost' || hostname === '127.0.0.1') && port === devUiPort;
+    const isViteDevUi = import.meta.env.DEV && port === devUiPort;
+    const isLoopbackHost =
+      hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
     const directLocalApi =
+      base === '' ||
       base === 'http://127.0.0.1:3001' ||
       base === 'http://localhost:3001';
-    if (viteDev && directLocalApi) {
+    // Hitting Vite from a LAN IP (e.g. 192.168.x.x): use same-origin `/api` so Vite proxies to the local
+    // Express port. A remote `VITE_API_BASE_URL` (Render, etc.) almost never allows that browser origin in CORS.
+    if (isViteDevUi && !isLoopbackHost) {
+      return '';
+    }
+    if (isViteDevUi && isLoopbackHost && directLocalApi) {
       return '';
     }
   }
@@ -67,6 +142,8 @@ export interface ApiUser {
   displayName: string;
   role: 'overseer' | 'admin';
   createdAt?: string;
+  /** REST: which stores this user may manage (motorworld, ecfp). */
+  shops?: string[];
 }
 
 export interface ActivityLog {
@@ -202,6 +279,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (!headers.has('Content-Type') && options.body) headers.set('Content-Type', 'application/json');
   const token = getStoredToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
+  const shopId = getStoredActiveShopId();
+  headers.set('X-Motor-Shop-Id', shopId);
 
   const url = `${getApiBase()}${path}`;
   let response: Response;
@@ -269,7 +348,6 @@ export const authApi = {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
-    setStoredToken(data.token);
     return data;
   },
   async me() {
@@ -290,6 +368,14 @@ export const authApi = {
   logout() {
     setStoredToken('');
   },
+};
+
+export const systemApi = {
+  clearStoreData: (shopId: string) =>
+    request<{ ok: boolean; shopId: string; collectionsRemoved: number }>('/api/system/clear-store-data', {
+      method: 'POST',
+      body: JSON.stringify({ shopId }),
+    }),
 };
 
 export const usersApi = {

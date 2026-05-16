@@ -3,7 +3,9 @@ import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
 import { authMiddleware } from './middleware/auth.js';
+import { shopScopeMiddleware } from './middleware/shopScope.js';
 import authRoutes from './routes/auth.js';
+import systemRoutes from './routes/system.js';
 import usersRoutes from './routes/users.js';
 import activityRoutes from './routes/activity.js';
 import notificationsRoutes from './routes/notifications.js';
@@ -89,20 +91,21 @@ app.use(async (req, res, next) => {
 });
 
 app.use('/api/auth', authRoutes);
-app.use('/api/users', authMiddleware, usersRoutes);
-app.use('/api/activity', authMiddleware, activityRoutes);
-app.use('/api/notifications', authMiddleware, notificationsRoutes);
-app.use('/api/transactions', authMiddleware, transactionsRoutes);
-app.use('/api/items', authMiddleware, itemsRoutes);
-app.use('/api/soa', authMiddleware, soaRoutes);
-app.use('/api/loans', authMiddleware, loansRoutes);
-app.use('/api/persons', authMiddleware, personsRoutes);
-app.use('/api/vehicles', authMiddleware, vehiclesRoutes);
-app.use('/api/expenses', authMiddleware, expensesRoutes);
-app.use('/api/suppliers', authMiddleware, suppliersRoutes);
-app.use('/api/purchases', authMiddleware, purchasesRoutes);
-app.use('/api/payment-journal', authMiddleware, paymentJournalRoutes);
-app.use('/api/document-archives', authMiddleware, documentArchivesRoutes);
+app.use('/api/system', authMiddleware, systemRoutes);
+app.use('/api/users', authMiddleware, shopScopeMiddleware, usersRoutes);
+app.use('/api/activity', authMiddleware, shopScopeMiddleware, activityRoutes);
+app.use('/api/notifications', authMiddleware, shopScopeMiddleware, notificationsRoutes);
+app.use('/api/transactions', authMiddleware, shopScopeMiddleware, transactionsRoutes);
+app.use('/api/items', authMiddleware, shopScopeMiddleware, itemsRoutes);
+app.use('/api/soa', authMiddleware, shopScopeMiddleware, soaRoutes);
+app.use('/api/loans', authMiddleware, shopScopeMiddleware, loansRoutes);
+app.use('/api/persons', authMiddleware, shopScopeMiddleware, personsRoutes);
+app.use('/api/vehicles', authMiddleware, shopScopeMiddleware, vehiclesRoutes);
+app.use('/api/expenses', authMiddleware, shopScopeMiddleware, expensesRoutes);
+app.use('/api/suppliers', authMiddleware, shopScopeMiddleware, suppliersRoutes);
+app.use('/api/purchases', authMiddleware, shopScopeMiddleware, purchasesRoutes);
+app.use('/api/payment-journal', authMiddleware, shopScopeMiddleware, paymentJournalRoutes);
+app.use('/api/document-archives', authMiddleware, shopScopeMiddleware, documentArchivesRoutes);
 
 // Global error handler so 500 responses return JSON with error message
 app.use((err, req, res, next) => {

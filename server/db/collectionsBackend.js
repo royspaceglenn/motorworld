@@ -209,6 +209,19 @@ async function upsertCollection(name, payload) {
     .run(name, json, ts);
 }
 
+/** Read JSON payload without creating an empty row (used for shop-prefixed keys + legacy migration). */
+export async function readCollectionRaw(name) {
+  if (isEmergencyDbBypass()) return null;
+  await initCollectionsBackend();
+  const row = await getCollectionRow(name);
+  if (!row) return null;
+  try {
+    return JSON.parse(row.payload);
+  } catch {
+    return null;
+  }
+}
+
 export async function readCollection(name, fallback = []) {
   if (isEmergencyDbBypass()) {
     return structuredClone(fallback);
@@ -249,4 +262,26 @@ export async function seedEmptyCollections(collectionNames) {
       }
     })
   );
+}
+
+/**
+ * Remove all collection rows whose name starts with `${shopId}::` (multi-store isolation).
+ * Does not touch global `users` or legacy unprefixed rows.
+ */
+export async function deleteCollectionsByShopPrefix(shopId) {
+  if (isEmergencyDbBypass()) return 0;
+  const prefix = `${String(shopId || '').trim()}::`;
+  if (!prefix || prefix === '::') return 0;
+  await initCollectionsBackend();
+  const like = `${prefix}%`;
+  if (mode === 'postgres') {
+    if (neonSql) {
+      await neonSql`DELETE FROM collections WHERE name LIKE ${like}`;
+      return 0;
+    }
+    const { rowCount } = await pgPool.query('DELETE FROM collections WHERE name LIKE $1', [like]);
+    return rowCount ?? 0;
+  }
+  const info = sqliteDb.prepare('DELETE FROM collections WHERE name LIKE ?').run(like);
+  return Number(info.changes || 0);
 }

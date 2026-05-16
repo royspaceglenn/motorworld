@@ -88,6 +88,7 @@ export const SOAModal: React.FC<SOAModalProps> = ({ transactionId, onClose }) =>
           originalItemSummary: res.soa.itemName,
           totalPaidIncludingThis: res.soa.totalPaid ?? amount,
           remainingBalance: res.soa.remainingBalance ?? 0,
+          shopId: res.soa.shopId,
         };
         openDocumentPreview({
           html: buildPaymentReceiptHtml(input),

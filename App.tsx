@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { useAuth } from './lib/auth/AuthContext';
 import {
@@ -9,6 +9,14 @@ import {
   USE_FIRESTORE_ADMIN_DATA,
   vehiclesApi,
 } from './lib/api/adminData';
+import {
+  ACTIVE_SHOP_SESSION_KEY,
+  buildOperationsUrlWithShop,
+  getStoredActiveShopId,
+  readShopIdFromUrl,
+  setStoredActiveShopId,
+} from './lib/api/client';
+import { SHOPS, workspaceBrand } from './lib/shops';
 import { getFirebaseFirestore, getFirebaseShopId } from './lib/firebase/app';
 import { FIRESTORE_COLLECTIONS } from './lib/firebase/schema';
 import { InventoryItem, Transaction, DashboardStats, Person, Vehicle, normalizeStockPurpose } from './types';
@@ -39,7 +47,6 @@ import { DocumentArchivesView } from './components/DocumentArchivesView';
 import { DocumentPrintPreviewModal } from './components/DocumentPrintPreviewModal';
 import { subscribeDocumentPreview } from './lib/documentPreviewBus';
 import type { DocumentPreviewDoc } from './lib/documentPreviewBus';
-import { COMPANY_DISPLAY_NAME } from './lib/company';
 import { Button } from './components/ui/Button';
 import {
   cx,
@@ -158,7 +165,41 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // --- Data Loading: use backend when user is logged in so admin and overseer see the same data ---
+  /** Seed this tab's store from `?shop=` / hash, or default to first allowed shop (each tab has its own sessionStorage). */
+  useLayoutEffect(() => {
+    if (USE_FIRESTORE_ADMIN_DATA || !user?.shops?.length) return;
+    const allowed = user.shops.filter((id) => id === 'motorworld' || id === 'ecfp');
+    if (!allowed.length) return;
+
+    const raw = sessionStorage.getItem(ACTIVE_SHOP_SESSION_KEY)?.trim().toLowerCase();
+    const hasSession = raw === 'motorworld' || raw === 'ecfp';
+
+    if (hasSession) {
+      if (!allowed.includes(raw)) {
+        setStoredActiveShopId(allowed[0]!);
+        window.location.reload();
+      }
+      return;
+    }
+
+    const urlShop = readShopIdFromUrl();
+    const pick = urlShop && allowed.includes(urlShop) ? urlShop : allowed[0]!;
+    setStoredActiveShopId(pick);
+  }, [user?.id, user?.shops]);
+
+  const handleShopChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    setStoredActiveShopId(e.target.value);
+    window.location.reload();
+  }, []);
+
+  const openOtherStoreInNewTab = useCallback(
+    (shopId: string) => {
+      if (!user?.shops?.includes(shopId)) return;
+      const url = buildOperationsUrlWithShop(shopId);
+      if (url) window.open(url, '_blank', 'noopener,noreferrer');
+    },
+    [user?.shops]
+  );
   const fetchItemsAndTransactions = React.useCallback(() => {
     if (!user) return;
     itemsApi.list()
@@ -236,8 +277,9 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (items.length > 0 || transactions.length > 0) {
-      localStorage.setItem('motorworld_items', JSON.stringify(items));
-      localStorage.setItem('motorworld_transactions', JSON.stringify(transactions));
+      const sid = getStoredActiveShopId();
+      localStorage.setItem(`motorworld_items_${sid}`, JSON.stringify(items));
+      localStorage.setItem(`motorworld_transactions_${sid}`, JSON.stringify(transactions));
     }
   }, [items, transactions]);
 
@@ -802,6 +844,8 @@ const App: React.FC = () => {
     if (historyTypeFilter === 'RETURN') titleType = 'Returned Items (In)';
     if (historyTypeFilter === 'ADJUSTMENT') titleType = 'Stock Adjustments';
 
+    const printBrand = workspaceBrand(getStoredActiveShopId(), USE_FIRESTORE_ADMIN_DATA);
+
     win.document.write(`
       <html>
         <head>
@@ -817,7 +861,7 @@ const App: React.FC = () => {
           </style>
         </head>
         <body>
-          <h1>${COMPANY_DISPLAY_NAME} — ${titleType}</h1>
+          <h1>${esc(printBrand.title)} — ${titleType}</h1>
           <p class="date">Period: ${historyStartDate || 'Start'} to ${historyEndDate || 'Present'} | Generated: ${new Date().toLocaleDateString()}</p>
           <table>
             <thead>
@@ -933,6 +977,7 @@ const App: React.FC = () => {
 
   const activeViewMeta = viewMeta[view];
   const flatNavigationItems = navigationSections.flatMap((section) => section.items);
+  const shellBrand = workspaceBrand(getStoredActiveShopId(), USE_FIRESTORE_ADMIN_DATA);
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(196,181,253,0.38),_rgba(248,250,252,1)_38%,_rgba(224,231,255,0.3)_100%)] text-slate-900 font-sans">
@@ -945,9 +990,9 @@ const App: React.FC = () => {
               </div>
               <div className="min-w-0">
                 <h1 className="break-words text-sm font-semibold leading-snug text-white">
-                  {COMPANY_DISPLAY_NAME}
+                  {shellBrand.title}
                 </h1>
-                <p className="text-xs text-slate-200">All-in-One Management</p>
+                <p className="text-xs text-slate-200">{shellBrand.tagline}</p>
               </div>
             </div>
 
@@ -973,6 +1018,51 @@ const App: React.FC = () => {
             </div>
 
             <div className="mt-6 rounded-[24px] border border-slate-600 bg-slate-800/80 p-4">
+              {!USE_FIRESTORE_ADMIN_DATA && user?.shops && user.shops.length > 0 && (
+                <div className="mb-4 border-b border-slate-600 pb-4">
+                  <label className="flex flex-col gap-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                    <span>Store — one tab per location</span>
+                    <select
+                      className="w-full rounded-lg border border-slate-600 bg-slate-900 px-2 py-2 text-xs font-semibold normal-case tracking-normal text-white"
+                      value={getStoredActiveShopId()}
+                      title="Each browser tab has its own store. Use “Open in new tab” to run two stores at once."
+                      onChange={handleShopChange}
+                    >
+                      {user.shops.map((id) => {
+                        const meta = SHOPS.find((s) => s.id === id);
+                        return (
+                          <option key={id} value={id}>
+                            {meta?.shortLabel ?? id}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </label>
+                  {user.shops.length > 1 && (
+                    <div className="mt-3 space-y-1.5 text-[11px] font-normal normal-case tracking-normal text-slate-300">
+                      <p className="text-slate-400">Also open:</p>
+                      <div className="flex flex-col gap-1">
+                        {user.shops
+                          .filter((id) => id !== getStoredActiveShopId())
+                          .map((id) => {
+                            const meta = SHOPS.find((s) => s.id === id);
+                            return (
+                              <button
+                                key={id}
+                                type="button"
+                                onClick={() => openOtherStoreInNewTab(id)}
+                                className="inline-flex items-center gap-1 text-left text-indigo-200 underline-offset-2 hover:text-white hover:underline"
+                              >
+                                <ArrowUpRight className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+                                {meta?.shortLabel ?? id} (new tab)
+                              </button>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
               <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-300">Logged in</p>
               <p className="mt-2 truncate text-sm font-medium text-white" title={user?.displayName}>
                 {user?.displayName || 'User'}
@@ -1039,12 +1129,32 @@ const App: React.FC = () => {
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-300">
-                    {COMPANY_DISPLAY_NAME}
+                    {shellBrand.title}
                   </p>
                   <h1 className="truncate text-lg font-semibold text-white">{activeViewMeta.title}</h1>
                   <p className="mt-1 text-sm text-slate-200">{activeViewMeta.description}</p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
+                  {!USE_FIRESTORE_ADMIN_DATA && user?.shops && user.shops.length > 0 && (
+                    <label className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                      <span className="hidden sm:inline">Store</span>
+                      <select
+                        className="max-w-[140px] rounded-lg border border-slate-600 bg-slate-900 px-2 py-1.5 text-xs font-semibold normal-case tracking-normal text-white sm:max-w-[220px]"
+                        value={getStoredActiveShopId()}
+                        title="Each browser tab has its own store. Use the links below to open the other location in a new tab."
+                        onChange={handleShopChange}
+                      >
+                        {user.shops.map((id) => {
+                          const meta = SHOPS.find((s) => s.id === id);
+                          return (
+                            <option key={id} value={id}>
+                              {meta?.shortLabel ?? id}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </label>
+                  )}
                   <Button
                     onClick={() => logout()}
                     variant="ghost"

@@ -1,4 +1,6 @@
 import type { Transaction } from '../types';
+import { getReceiptBranding } from '../lib/receiptBranding';
+import { getStoredActiveShopId } from '../lib/api/client';
 
 function esc(s: string): string {
   return s
@@ -20,6 +22,7 @@ export function buildReceiptHtml(transaction: Transaction): string {
   function round2(n: number) {
     return Math.round(n * 100) / 100;
   }
+  const branding = getReceiptBranding(transaction.shopId);
   const idShort = (transaction.id || '').slice(0, 8);
   const payment = paymentLabel(transaction);
   const extraRows: string[] = [];
@@ -124,8 +127,9 @@ export function buildReceiptHtml(transaction: Transaction): string {
   <title>Receipt #${idShort}</title>
   <style>
     body { font-family: 'Helvetica', Arial, sans-serif; padding: 24px; max-width: 360px; margin: 0 auto; color: #111; font-size: 14px; }
-    .brand { text-align: center; font-size: 18px; font-weight: bold; margin-bottom: 4px; }
-    .sub { text-align: center; font-size: 11px; color: #666; margin-bottom: 20px; }
+    .brand { text-align: center; font-size: 18px; font-weight: bold; margin-bottom: 4px; color: ${branding.accentColor}; }
+    .sub { text-align: center; font-size: 11px; color: #666; margin-bottom: 8px; }
+    .store-tag { text-align: center; font-size: 10px; font-weight: 700; letter-spacing: 0.12em; color: ${branding.accentColor}; margin-bottom: 12px; }
     .line { border-top: 1px dashed #ccc; margin: 12px 0; }
     .row { display: flex; justify-content: space-between; margin: 6px 0; gap: 8px; }
     .total { font-size: 16px; font-weight: bold; margin-top: 12px; }
@@ -134,8 +138,9 @@ export function buildReceiptHtml(transaction: Transaction): string {
   </style>
 </head>
 <body>
-  <div class="brand">Motor World Auto Services & Sales Corporation</div>
-  <div class="sub">Official Receipt</div>
+  <div class="brand">${esc(branding.businessName)}</div>
+  <div class="sub">${esc(branding.receiptSubtitle)}</div>
+  <div class="store-tag">${esc(branding.storeCode)}</div>
   <div class="line"></div>
   <div class="row"><span>Date</span><span>${esc(new Date(transaction.timestamp).toLocaleString())}</span></div>
   <div class="row"><span>Receipt #</span><span>#${esc(idShort)}</span></div>
@@ -184,6 +189,8 @@ export interface PaymentReceiptInput {
   remainingBalance: number;
   /** Optional short id for the payment, falls back to a generated short id. */
   paymentId?: string;
+  /** Optional; falls back to active session store. */
+  shopId?: string | null;
 }
 
 export function buildPaymentReceiptHtml(input: PaymentReceiptInput): string {
@@ -212,6 +219,8 @@ export function buildPaymentReceiptHtml(input: PaymentReceiptInput): string {
     ? `<div class="row" style="align-items:flex-start"><span>For</span><span style="text-align:right;max-width:65%">${esc(input.originalItemSummary)}</span></div>`
     : '';
 
+  const branding = getReceiptBranding(input.shopId ?? getStoredActiveShopId());
+
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -219,8 +228,9 @@ export function buildPaymentReceiptHtml(input: PaymentReceiptInput): string {
   <title>Official Receipt #${esc(idShort)}</title>
   <style>
     body { font-family: 'Helvetica', Arial, sans-serif; padding: 24px; max-width: 360px; margin: 0 auto; color: #111; font-size: 14px; }
-    .brand { text-align: center; font-size: 18px; font-weight: bold; margin-bottom: 4px; }
+    .brand { text-align: center; font-size: 18px; font-weight: bold; margin-bottom: 4px; color: ${branding.accentColor}; }
     .sub { text-align: center; font-size: 11px; color: #666; margin-bottom: 6px; }
+    .store-tag { text-align: center; font-size: 10px; font-weight: 700; letter-spacing: 0.12em; color: ${branding.accentColor}; margin-bottom: 10px; }
     .status { text-align: center; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; margin-bottom: 16px; color: ${statusColor}; }
     .line { border-top: 1px dashed #ccc; margin: 12px 0; }
     .row { display: flex; justify-content: space-between; margin: 6px 0; gap: 8px; }
@@ -232,8 +242,9 @@ export function buildPaymentReceiptHtml(input: PaymentReceiptInput): string {
   </style>
 </head>
 <body>
-  <div class="brand">Motor World Auto Services & Sales Corporation</div>
+  <div class="brand">${esc(branding.businessName)}</div>
   <div class="sub">Official Receipt — Payment Received</div>
+  <div class="store-tag">${esc(branding.storeCode)}</div>
   <div class="status">${statusLabel}</div>
   <div class="row"><span>Date</span><span>${esc(new Date(input.paidAt).toLocaleString())}</span></div>
   <div class="row"><span>OR #</span><span>#${esc(idShort)}</span></div>

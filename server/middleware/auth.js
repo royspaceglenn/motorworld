@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import { getPrimaryUserForSession, getUserById, mapUserToSession } from '../db/store.js';
 import { EMERGENCY_USER_ID } from '../lib/emergencyAuth.js';
 import { getAppSigningSecretForTokens } from '../lib/secrets.js';
+import { SHOP_IDS } from '../lib/shops.js';
 
 function readToken(req) {
   const header = req.headers.authorization || '';
@@ -32,12 +33,18 @@ export async function authMiddleware(req, res, next) {
         email: payload.email,
         displayName: payload.displayName,
         role: 'admin',
+        shops: Array.isArray(payload.shops) && payload.shops.length ? payload.shops : [...SHOP_IDS],
       };
       return next();
     }
     const user = await getUserById(payload.sub);
     if (!user) return res.status(401).json({ error: 'Account no longer exists.' });
-    req.user = mapUserToSession(user);
+    const session = mapUserToSession(user);
+    /** Shops always follow the DB (see `shopsForUser`); do not let a stale JWT `shops` claim shrink access. */
+    req.user = {
+      ...session,
+      shops: session.shops,
+    };
     return next();
   } catch {
     return res.status(401).json({ error: 'Invalid or expired token.' });

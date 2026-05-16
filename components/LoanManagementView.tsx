@@ -181,6 +181,7 @@ export const LoanManagementView: React.FC<LoanManagementViewProps> = ({
           totalPaidIncludingThis: totalPaid,
           remainingBalance: Number(res.loan.remainingBalance ?? 0),
           paymentId: res.payment?.id,
+          shopId: res.loan.shopId ?? transactions.find((t) => t.id === res.loan.transactionId)?.shopId,
         };
         openDocumentPreview({
           html: buildPaymentReceiptHtml(input),
@@ -218,6 +219,7 @@ export const LoanManagementView: React.FC<LoanManagementViewProps> = ({
               originalItemSummary: tx.itemName,
               totalPaidIncludingThis: amount,
               remainingBalance: 0,
+              shopId: tx.shopId,
             };
             openDocumentPreview({
               html: buildPaymentReceiptHtml(input),
