@@ -376,6 +376,12 @@ export const systemApi = {
       method: 'POST',
       body: JSON.stringify({ shopId }),
     }),
+  /** Wipe all shops + legacy data; keeps user accounts. Body must include confirm phrase (see server). */
+  clearAllBusinessData: (confirm: 'DELETE_ALL_BUSINESS_DATA') =>
+    request<{ ok: boolean; removed: number; mode: string }>('/api/system/clear-all-business-data', {
+      method: 'POST',
+      body: JSON.stringify({ confirm }),
+    }),
 };
 
 export const usersApi = {

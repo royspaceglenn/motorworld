@@ -20,6 +20,20 @@ import { scheduleViewerSync } from '../services/firebaseViewerSync.js';
 
 const router = express.Router();
 
+function resolveTransactionTimestamp(body) {
+  const ts = String(body?.timestamp || '').trim();
+  if (ts) {
+    const d = new Date(ts);
+    if (!Number.isNaN(d.getTime())) return d.toISOString();
+  }
+  const td = String(body?.transactionDate || '').trim();
+  if (td) {
+    const d = new Date(td.length === 10 ? `${td}T12:00:00` : td);
+    if (!Number.isNaN(d.getTime())) return d.toISOString();
+  }
+  return new Date().toISOString();
+}
+
 router.get('/', async (_req, res) => {
   return res.json({ transactions: await getTransactions() });
 });
@@ -167,6 +181,10 @@ router.post('/', requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'Quantity must be greater than zero.' });
     }
 
+    if (type === 'RELEASE' || type === 'ISSUE') {
+      payload.timestamp = resolveTransactionTimestamp(payload);
+    }
+
     if (type === 'RELEASE' && hasPosProductLines) {
       for (const line of posLines) {
         if (line.itemType !== 'Product' || !line.itemId) continue;
@@ -183,7 +201,7 @@ router.post('/', requireAdmin, async (req, res) => {
     }
 
     if (type === 'RELEASE' && hasPosProductLines) {
-      const now = payload.timestamp || new Date().toISOString();
+      const saleTimestamp = payload.timestamp;
       for (const line of posLines) {
         if (line.itemType !== 'Product' || !line.itemId) continue;
         const lineQty = Math.abs(Number(line.quantity) || 0);
@@ -192,7 +210,7 @@ router.post('/', requireAdmin, async (req, res) => {
         await updateItem(inv.id, {
           quantity: inv.quantity - lineQty,
           unitPrice: inv.unitPrice,
-          lastUpdated: now,
+          lastUpdated: saleTimestamp,
           receiptNumber: payload.receiptNumber ?? inv.receiptNumber ?? null,
         });
       }

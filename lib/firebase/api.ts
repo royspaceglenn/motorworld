@@ -830,4 +830,7 @@ export const systemApi = {
   clearStoreData: async (_shopId: string) => {
     throw new Error('Clearing store data requires the REST API backend (SQLite), not Firebase.');
   },
+  clearAllBusinessData: async (_confirm: 'DELETE_ALL_BUSINESS_DATA') => {
+    throw new Error('Wiping all business data requires the REST API backend, not Firebase.');
+  },
 };

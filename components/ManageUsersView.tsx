@@ -4,6 +4,8 @@ import { getStoredActiveShopId } from '../lib/api/client';
 import { SHOPS } from '../lib/shops';
 import { UserPlus, Trash2, Users, KeyRound } from 'lucide-react';
 
+const WIPE_ALL_BUSINESS_CONFIRM = 'DELETE_ALL_BUSINESS_DATA' as const;
+
 export const ManageUsersView: React.FC = () => {
   const [users, setUsers] = useState<ApiUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,6 +24,9 @@ export const ManageUsersView: React.FC = () => {
   const [clearShopId, setClearShopId] = useState(() => getStoredActiveShopId());
   const [clearBusy, setClearBusy] = useState(false);
   const [clearMsg, setClearMsg] = useState<string | null>(null);
+  const [wipeAllPhrase, setWipeAllPhrase] = useState('');
+  const [wipeAllBusy, setWipeAllBusy] = useState(false);
+  const [wipeAllMsg, setWipeAllMsg] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -280,6 +285,69 @@ export const ManageUsersView: React.FC = () => {
             </button>
           </div>
           {clearMsg && <p className="mt-3 text-sm text-red-900">{clearMsg}</p>}
+        </div>
+      )}
+
+      {!USE_FIRESTORE_ADMIN_DATA && (
+        <div className="mt-6 rounded-xl border border-red-900/40 bg-red-950/10 p-6 ring-1 ring-red-900/20">
+          <h3 className="text-sm font-bold uppercase tracking-wide text-red-950">
+            Danger zone — wipe all inventory and business data
+          </h3>
+          <p className="mt-2 text-sm text-red-900/95">
+            Deletes <strong>everything</strong> for <strong>all stores</strong> (Motor World and ECFP), including any
+            legacy unprefixed data: items, stock, transactions, customers, vehicles, expenses, receivables, document
+            archives, activity logs, and notifications. <strong>Administrator accounts are kept.</strong> This cannot be
+            undone.
+          </p>
+          <div className="mt-4 space-y-3">
+            <div>
+              <label className="block text-xs font-semibold uppercase text-red-950/90">
+                Type exactly: {WIPE_ALL_BUSINESS_CONFIRM}
+              </label>
+              <input
+                type="text"
+                className="mt-1 w-full max-w-xl rounded-lg border border-red-400 bg-white px-3 py-2 font-mono text-sm text-slate-900"
+                value={wipeAllPhrase}
+                onChange={(e) => setWipeAllPhrase(e.target.value)}
+                placeholder={WIPE_ALL_BUSINESS_CONFIRM}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </div>
+            <button
+              type="button"
+              disabled={wipeAllBusy || wipeAllPhrase !== WIPE_ALL_BUSINESS_CONFIRM}
+              onClick={async () => {
+                if (
+                  !window.confirm(
+                    'FINAL WARNING: This will permanently delete ALL business data for every store.\n\nAdministrator logins will remain.\n\nContinue?'
+                  )
+                ) {
+                  return;
+                }
+                setWipeAllBusy(true);
+                setWipeAllMsg(null);
+                try {
+                  const res = await systemApi.clearAllBusinessData(WIPE_ALL_BUSINESS_CONFIRM);
+                  const n = res.removed;
+                  setWipeAllMsg(
+                    n >= 0
+                      ? `Removed ${n} data bucket(s). Reloading…`
+                      : `Wipe completed (${res.mode}). Reloading…`
+                  );
+                  window.setTimeout(() => window.location.reload(), 900);
+                } catch (e) {
+                  setWipeAllMsg(e instanceof Error ? e.message : 'Wipe failed.');
+                } finally {
+                  setWipeAllBusy(false);
+                }
+              }}
+              className="rounded-lg bg-red-950 px-4 py-2 text-sm font-semibold text-white hover:bg-black disabled:opacity-40"
+            >
+              {wipeAllBusy ? 'Wiping…' : 'Wipe all business data now'}
+            </button>
+          </div>
+          {wipeAllMsg && <p className="mt-3 text-sm text-red-950">{wipeAllMsg}</p>}
         </div>
       )}
 

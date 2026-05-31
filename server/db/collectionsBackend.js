@@ -285,3 +285,22 @@ export async function deleteCollectionsByShopPrefix(shopId) {
   const info = sqliteDb.prepare('DELETE FROM collections WHERE name LIKE ?').run(like);
   return Number(info.changes || 0);
 }
+
+/**
+ * Delete every `collections` row except `users` (all shops, prefixed + legacy unprefixed).
+ * User accounts and login hashes are preserved.
+ */
+export async function deleteAllNonUserCollections() {
+  if (isEmergencyDbBypass()) return { removed: 0, mode: 'bypass' };
+  await initCollectionsBackend();
+  if (mode === 'postgres') {
+    if (neonSql) {
+      await neonSql`DELETE FROM collections WHERE name <> 'users'`;
+      return { removed: -1, mode: 'postgres-neon' };
+    }
+    const { rowCount } = await pgPool.query('DELETE FROM collections WHERE name <> $1', ['users']);
+    return { removed: rowCount ?? 0, mode: 'postgres' };
+  }
+  const info = sqliteDb.prepare('DELETE FROM collections WHERE name != ?').run('users');
+  return { removed: Number(info.changes || 0), mode: 'sqlite' };
+}

@@ -70,6 +70,19 @@ function qtyInCartForProduct(cart: CartLine[], itemId: string) {
     .reduce((s, l) => s + l.qty, 0);
 }
 
+function todayDateInputValue(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function dateInputToIsoTimestamp(dateStr: string): string {
+  const raw = String(dateStr || '').trim();
+  if (!raw) return new Date().toISOString();
+  const d = new Date(raw.length === 10 ? `${raw}T12:00:00` : raw);
+  if (Number.isNaN(d.getTime())) return new Date().toISOString();
+  return d.toISOString();
+}
+
 export const POSView: React.FC<POSViewProps> = ({
   items,
   persons,
@@ -96,6 +109,7 @@ export const POSView: React.FC<POSViewProps> = ({
   const [dueDays, setDueDays] = useState(30);
   const [chequeExpectedClearDate, setChequeExpectedClearDate] = useState('');
   const [chequeReference, setChequeReference] = useState('');
+  const [transactionDate, setTransactionDate] = useState(todayDateInputValue);
   const [isPersonDropdownOpen, setIsPersonDropdownOpen] = useState(false);
   const [isVehicleDropdownOpen, setIsVehicleDropdownOpen] = useState(false);
   const [isItemDropdownOpen, setIsItemDropdownOpen] = useState(false);
@@ -338,6 +352,10 @@ export const POSView: React.FC<POSViewProps> = ({
       setError('Expected bank clearance date is required for Cheque sales.');
       return;
     }
+    if (!transactionDate.trim()) {
+      setError('Transaction date is required.');
+      return;
+    }
 
     setSubmitting(true);
     resolvePersonId()
@@ -361,7 +379,7 @@ export const POSView: React.FC<POSViewProps> = ({
               : paymentType === 'Cheque'
                 ? 'Cheque'
                 : 'Credit';
-        const now = new Date().toISOString();
+        const saleTimestamp = dateInputToIsoTimestamp(transactionDate);
         const posLineItems = cart.map((l) => {
           const inv = l.itemType === 'Product' && l.itemId ? items.find((i) => i.id === l.itemId) : undefined;
           const dpu = round2(l.discountPerUnit ?? 0);
@@ -386,7 +404,8 @@ export const POSView: React.FC<POSViewProps> = ({
           quantityChange: -totalUnits,
           unitPriceAtTime: totalUnits > 0 ? round2(grandTotal / totalUnits) : 0,
           totalValue: grandTotal,
-          timestamp: now,
+          timestamp: saleTimestamp,
+          transactionDate: saleTimestamp,
           recipient: recipientName,
           note: note.trim() || undefined,
           modeOfPayment,
@@ -456,6 +475,7 @@ export const POSView: React.FC<POSViewProps> = ({
         setTerms('');
         setChequeExpectedClearDate('');
         setChequeReference('');
+        setTransactionDate(todayDateInputValue());
       })
       .catch((err) => {
         setError(err?.message ?? 'Sale failed.');
@@ -469,7 +489,8 @@ export const POSView: React.FC<POSViewProps> = ({
     grandTotal > 0 &&
     (selectedPersonId || customerInput.trim()) &&
     (paymentType !== 'Purchase Order' || (invoiceNumber.trim() && dueDate.trim() && terms.trim())) &&
-    (paymentType !== 'Cheque' || chequeExpectedClearDate.trim());
+    (paymentType !== 'Cheque' || chequeExpectedClearDate.trim()) &&
+    transactionDate.trim();
 
   const billingLetterhead = useMemo(
     () => ({
@@ -890,6 +911,23 @@ export const POSView: React.FC<POSViewProps> = ({
               </p>
             </div>
           )}
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Transaction date <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="date"
+              required
+              className="w-full max-w-xs px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              value={transactionDate}
+              onChange={(e) => setTransactionDate(e.target.value)}
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Use the actual sale date if you are encoding this transaction later (e.g. next day). Receipts, inventory,
+              and accounts receivable will use this date.
+            </p>
+          </div>
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">Payment <span className="text-red-500">*</span></label>
