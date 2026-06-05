@@ -2,17 +2,40 @@ import React, { useState, useMemo } from 'react';
 import { InventoryItem, Transaction, STOCK_PURPOSE_META, normalizeStockPurpose } from '../types';
 import { StatsCard } from './StatsCard';
 import { DashboardSurface } from './ui/DashboardPrimitives';
-import { Package, TrendingUp, TrendingDown, DollarSign, AlertOctagon, CalendarClock } from 'lucide-react';
+import { Package, TrendingUp, TrendingDown, DollarSign, AlertOctagon, CalendarClock, ChevronDown } from 'lucide-react';
 
 interface ItemDetailsProps {
   items: InventoryItem[];
   transactions: Transaction[];
 }
 
+function itemPickerLabel(item: InventoryItem): string {
+  return item.brand ? `${item.name} (${item.brand})` : item.name;
+}
+
 export const ItemDetails: React.FC<ItemDetailsProps> = ({ items, transactions }) => {
   const [selectedItemId, setSelectedItemId] = useState<string>('');
+  const [searchInput, setSearchInput] = useState('');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
-  const selectedItem = items.find(i => i.id === selectedItemId);
+  const selectedItem = items.find((i) => i.id === selectedItemId);
+
+  const sortedItems = useMemo(
+    () => [...items].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
+    [items]
+  );
+
+  const filteredItems = useMemo(() => {
+    const q = searchInput.trim().toLowerCase();
+    if (!q) return sortedItems;
+    return sortedItems.filter((item) => {
+      const hay = [item.name, item.brand, item.category, item.description]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [sortedItems, searchInput]);
 
   const itemStats = useMemo(() => {
     if (!selectedItem) return null;
@@ -70,16 +93,66 @@ export const ItemDetails: React.FC<ItemDetailsProps> = ({ items, transactions })
     <div className="space-y-6 animate-fade-in">
       <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
         <label className="block text-sm font-medium text-slate-700 mb-2">Select Item to View Details</label>
-        <select 
-            className="w-full md:w-1/2 px-4 py-2 bg-white text-slate-900 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all shadow-sm"
-            value={selectedItemId}
-            onChange={(e) => setSelectedItemId(e.target.value)}
-        >
-            <option value="">-- Select an Item --</option>
-            {items.map(item => (
-                <option key={item.id} value={item.id}>{item.name} {item.brand ? `(${item.brand})` : ''}</option>
-            ))}
-        </select>
+        <div className="relative w-full md:max-w-xl">
+          <input
+            type="text"
+            className="w-full px-4 py-2.5 pr-10 bg-white text-slate-900 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all shadow-sm placeholder:text-slate-400"
+            placeholder="Search or select an item…"
+            value={
+              selectedItemId && !isDropdownOpen && selectedItem
+                ? itemPickerLabel(selectedItem)
+                : searchInput
+            }
+            onChange={(e) => {
+              setSearchInput(e.target.value);
+              setSelectedItemId('');
+              setIsDropdownOpen(true);
+            }}
+            onFocus={() => {
+              setIsDropdownOpen(true);
+              if (selectedItemId && selectedItem) {
+                setSearchInput(itemPickerLabel(selectedItem));
+              }
+            }}
+            onBlur={() => setTimeout(() => setIsDropdownOpen(false), 200)}
+            autoComplete="off"
+          />
+          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+          {isDropdownOpen && (
+            <div className="absolute z-20 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+              {filteredItems.length === 0 ? (
+                <div className="px-4 py-3 text-sm text-slate-500">No items match your search.</div>
+              ) : (
+                filteredItems.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`w-full text-left px-4 py-2.5 hover:bg-indigo-50 text-sm border-b border-slate-50 last:border-0 ${
+                      item.id === selectedItemId ? 'bg-indigo-50/80' : ''
+                    }`}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setSelectedItemId(item.id);
+                      setSearchInput(itemPickerLabel(item));
+                      setIsDropdownOpen(false);
+                    }}
+                  >
+                    <div className="font-medium text-slate-800">{itemPickerLabel(item)}</div>
+                    <div className="text-xs text-slate-500 mt-0.5 flex flex-wrap gap-x-2">
+                      <span>{item.category}</span>
+                      <span>
+                        Stock: {item.quantity} {item.unit || 'pcs'}
+                      </span>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          Type to filter the list, then pick an item below to view stock stats and transaction history.
+        </p>
       </div>
 
       {selectedItem && itemStats && (

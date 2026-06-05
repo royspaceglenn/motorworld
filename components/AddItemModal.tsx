@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { InventoryItem, STOCK_PURPOSE_META } from '../types';
-import { grossProfitPerUnitNumbers } from '../lib/inventoryPricing';
+import { formatLowStockAlertThreshold, grossProfitPerUnitNumbers } from '../lib/inventoryPricing';
 import { X, Sparkles, ChevronDown } from 'lucide-react';
 import { generateItemDescription } from '../services/geminiService';
 import { Button } from './ui/Button';
@@ -117,7 +117,7 @@ export const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose, onS
     unitPrice: 0,
     capitalPrice: 0,
     description: '',
-    minStockLevel: 5,
+    minStockLevel: 0,
     receiptNumber: '',
     stockPurpose: 'for_sale',
   });
@@ -129,6 +129,7 @@ export const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose, onS
   const [priceInput, setPriceInput] = useState('');
   const [capitalInput, setCapitalInput] = useState('');
   const [minStockInput, setMinStockInput] = useState('');
+  const [lowStockAlertOff, setLowStockAlertOff] = useState(false);
 
   useEffect(() => {
     setError(null);
@@ -138,7 +139,9 @@ export const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose, onS
       setQtyInput(String(editItem.quantity ?? 0));
       setPriceInput(String(editItem.unitPrice ?? 0));
       setCapitalInput(String(editItem.capitalPrice ?? editItem.unitPrice ?? 0));
-      setMinStockInput(String(editItem.minStockLevel ?? 0));
+      const min = Number(editItem.minStockLevel ?? 0);
+      setLowStockAlertOff(min < 0);
+      setMinStockInput(min < 0 ? '0' : String(min));
     } else {
       setFormData({
         name: '',
@@ -149,14 +152,15 @@ export const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose, onS
         unitPrice: 0,
         capitalPrice: 0,
         description: '',
-        minStockLevel: 5,
+        minStockLevel: 0,
         receiptNumber: '',
         stockPurpose: 'for_sale',
       });
       setQtyInput('');
       setPriceInput('');
       setCapitalInput('');
-      setMinStockInput('5');
+      setMinStockInput('0');
+      setLowStockAlertOff(false);
     }
   }, [editItem, isOpen]);
 
@@ -172,7 +176,15 @@ export const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose, onS
       const qtyRaw = qtyInput.trim() === '' ? '0' : sanitizeIntInput(qtyInput);
       const qtyParsed = parseInt(qtyRaw === '' ? '0' : qtyRaw, 10);
       const quantity = Number.isNaN(qtyParsed) ? 0 : Math.max(0, qtyParsed);
-      await Promise.resolve(onSave({ ...formData, quantity, capitalPrice: cap }));
+      let minStockLevel = -1;
+      if (!lowStockAlertOff) {
+        const minRaw = minStockInput.trim() === '' ? '0' : sanitizeIntInput(minStockInput);
+        const minParsed = parseInt(minRaw === '' ? '0' : minRaw, 10);
+        minStockLevel = Number.isNaN(minParsed) ? 0 : Math.max(0, minParsed);
+      }
+      await Promise.resolve(
+        onSave({ ...formData, quantity, capitalPrice: cap, minStockLevel })
+      );
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save item.');
@@ -325,6 +337,60 @@ export const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose, onS
                 </div>
 
                 <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Low stock alert at (qty)
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    autoComplete="off"
+                    disabled={lowStockAlertOff}
+                    className="w-full px-3 py-2 bg-white text-slate-900 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder-slate-400 transition-all shadow-sm disabled:bg-slate-100 disabled:text-slate-500"
+                    value={minStockInput}
+                    onChange={(e) => {
+                      const next = sanitizeIntInput(e.target.value);
+                      setMinStockInput(next);
+                      const n = next === '' ? 0 : parseInt(next, 10);
+                      setFormData((prev) => ({
+                        ...prev,
+                        minStockLevel: Number.isNaN(n) ? 0 : n,
+                      }));
+                    }}
+                    placeholder="e.g. 2"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">
+                    Alert when stock is at or below this number. Use <strong>0</strong> for slow movers (only warns when
+                    out of stock). Use <strong>1–2</strong> for items you always keep a small qty of.
+                  </p>
+                  <label className="mt-2 flex items-center gap-2 cursor-pointer text-sm text-slate-600">
+                    <input
+                      type="checkbox"
+                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                      checked={lowStockAlertOff}
+                      onChange={(e) => {
+                        setLowStockAlertOff(e.target.checked);
+                        if (e.target.checked) {
+                          setFormData((prev) => ({ ...prev, minStockLevel: -1 }));
+                        } else {
+                          const n = parseInt(minStockInput || '0', 10);
+                          setFormData((prev) => ({
+                            ...prev,
+                            minStockLevel: Number.isNaN(n) ? 0 : Math.max(0, n),
+                          }));
+                        }
+                      }}
+                    />
+                    No low stock alert for this item
+                  </label>
+                  {!lowStockAlertOff && (
+                    <p className="text-xs text-indigo-700/80 mt-1">
+                      Current setting: warn at ≤ {formatLowStockAlertThreshold(formData.minStockLevel)} on hand
+                    </p>
+                  )}
+                </div>
+
+                <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Selling price (₱)</label>
                 <input
                     required
@@ -390,28 +456,6 @@ export const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose, onS
                         onChange={(e) => setFormData({ ...formData, receiptNumber: e.target.value })}
                         placeholder="e.g. OR-12345"
                     />
-                </div>
-
-                <div className="col-span-2">
-                <label className="block text-sm font-medium text-slate-700 mb-1">Min. Stock Level</label>
-                <input
-                    required
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    autoComplete="off"
-                    className="w-full px-3 py-2 bg-white text-slate-900 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder-slate-400 transition-all shadow-sm"
-                    value={minStockInput}
-                    onChange={(e) => {
-                      const next = sanitizeIntInput(e.target.value);
-                      setMinStockInput(next);
-                      const n = next === '' ? 0 : parseInt(next, 10);
-                      setFormData((prev) => ({
-                        ...prev,
-                        minStockLevel: Number.isNaN(n) ? 0 : n,
-                      }));
-                    }}
-                />
                 </div>
 
                 <div className="col-span-2">

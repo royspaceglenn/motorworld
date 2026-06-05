@@ -47,6 +47,8 @@ interface CartLine {
   unitPrice: number;
   /** Per-unit discount (PHP); total line discount = discountPerUnit × qty. */
   discountPerUnit: number;
+  /** COGS per unit for migration lines (optional). */
+  costPerUnit?: number;
 }
 
 function round2(n: number) {
@@ -98,6 +100,9 @@ export const POSView: React.FC<POSViewProps> = ({
   const [chequeExpectedClearDate, setChequeExpectedClearDate] = useState('');
   const [chequeReference, setChequeReference] = useState('');
   const [transactionDate, setTransactionDate] = useState(todayDateInputValue);
+  const [historicalSale, setHistoricalSale] = useState(false);
+  const [migrationProductName, setMigrationProductName] = useState('');
+  const [draftCostPerUnit, setDraftCostPerUnit] = useState(0);
   const [isPersonDropdownOpen, setIsPersonDropdownOpen] = useState(false);
   const [isVehicleDropdownOpen, setIsVehicleDropdownOpen] = useState(false);
   const [isItemDropdownOpen, setIsItemDropdownOpen] = useState(false);
@@ -135,11 +140,11 @@ export const POSView: React.FC<POSViewProps> = ({
     () =>
       items.filter(
         (i) =>
-          (i.quantity ?? 0) > 0 &&
+          (historicalSale || (i.quantity ?? 0) > 0) &&
           normalizeStockPurpose(i.stockPurpose) === 'for_sale' &&
           !isExcludedFromPosProductPicker(i.category)
       ),
-    [items]
+    [items, historicalSale]
   );
 
   useEffect(() => {
@@ -164,7 +169,11 @@ export const POSView: React.FC<POSViewProps> = ({
     () =>
       round2(
         cart.reduce((s, line) => {
-          if (line.itemType !== 'Product' || !line.itemId) return s;
+          if (line.itemType !== 'Product') return s;
+          if (line.costPerUnit != null && line.costPerUnit > 0) {
+            return s + line.qty * line.costPerUnit;
+          }
+          if (!line.itemId) return s;
           const inv = items.find((i) => i.id === line.itemId);
           const cap = inv ? itemCapitalPerUnit(inv) : 0;
           return s + line.qty * cap;
@@ -222,44 +231,89 @@ export const POSView: React.FC<POSViewProps> = ({
     }
 
     if (draftItemType === 'Product') {
-      if (!activeDraftItem) {
-        setError('Select a product.');
-        return;
-      }
       if (cart.some((l) => l.itemType === 'Service')) {
         setError('This cart already has a service. Remove it or complete the sale before adding a product.');
         return;
       }
       const q = Math.max(1, Math.floor(draftQty));
-      const existingIdx = cart.findIndex((l) => l.itemType === 'Product' && l.itemId === activeDraftItem.id);
-      const existingQty = existingIdx >= 0 ? cart[existingIdx]!.qty : 0;
-      const nextQty = existingQty + q;
-      const stock = Number(activeDraftItem.quantity ?? 0);
-      if (nextQty > stock) {
-        setError(
-          `Not enough stock for ${activeDraftItem.name}. In cart: ${existingQty}. You can add at most ${Math.max(0, stock - existingQty)} more.`
+      const lineCost = round2(Number(draftCostPerUnit) || 0);
+
+      if (historicalSale) {
+        const name = migrationProductName.trim() || activeDraftItem?.name?.trim() || '';
+        if (!name) {
+          setError('Enter the product name sold (it does not need to be in inventory).');
+          return;
+        }
+        const itemId = activeDraftItem?.id ?? null;
+        const costPerUnit =
+          lineCost > 0 ? lineCost : activeDraftItem ? round2(itemCapitalPerUnit(activeDraftItem)) : undefined;
+        const lineKey = `${name.toLowerCase()}::${itemId ?? ''}`;
+        const existingIdx = cart.findIndex(
+          (l) =>
+            l.itemType === 'Product' &&
+            `${l.name.trim().toLowerCase()}::${l.itemId ?? ''}` === lineKey
         );
-        return;
-      }
-      if (existingIdx >= 0) {
-        setCart((prev) =>
-          prev.map((l, i) =>
-            i === existingIdx ? { ...l, qty: nextQty, unitPrice: price, discountPerUnit: dpu } : l
-          )
-        );
+        if (existingIdx >= 0) {
+          setCart((prev) =>
+            prev.map((l, i) =>
+              i === existingIdx
+                ? { ...l, qty: l.qty + q, unitPrice: price, discountPerUnit: dpu, costPerUnit }
+                : l
+            )
+          );
+        } else {
+          setCart((prev) => [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              itemType: 'Product',
+              itemId,
+              name,
+              qty: q,
+              unitPrice: price,
+              discountPerUnit: dpu,
+              costPerUnit,
+            },
+          ]);
+        }
+        setMigrationProductName('');
+        setSelectedItemId('');
+        setDraftCostPerUnit(0);
       } else {
-        setCart((prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            itemType: 'Product',
-            itemId: activeDraftItem.id,
-            name: activeDraftItem.name,
-            qty: q,
-            unitPrice: price,
-            discountPerUnit: dpu,
-          },
-        ]);
+        if (!activeDraftItem) {
+          setError('Select a product.');
+          return;
+        }
+        const existingIdx = cart.findIndex((l) => l.itemType === 'Product' && l.itemId === activeDraftItem.id);
+        const existingQty = existingIdx >= 0 ? cart[existingIdx]!.qty : 0;
+        const nextQty = existingQty + q;
+        const stock = Number(activeDraftItem.quantity ?? 0);
+        if (nextQty > stock) {
+          setError(
+            `Not enough stock for ${activeDraftItem.name}. In cart: ${existingQty}. You can add at most ${Math.max(0, stock - existingQty)} more.`
+          );
+          return;
+        }
+        if (existingIdx >= 0) {
+          setCart((prev) =>
+            prev.map((l, i) =>
+              i === existingIdx ? { ...l, qty: nextQty, unitPrice: price, discountPerUnit: dpu } : l
+            )
+          );
+        } else {
+          setCart((prev) => [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              itemType: 'Product',
+              itemId: activeDraftItem.id,
+              name: activeDraftItem.name,
+              qty: q,
+              unitPrice: price,
+              discountPerUnit: dpu,
+            },
+          ]);
+        }
       }
       setDraftQty(1);
       setDraftDiscountPerUnit(0);
@@ -371,6 +425,11 @@ export const POSView: React.FC<POSViewProps> = ({
         const posLineItems = cart.map((l) => {
           const inv = l.itemType === 'Product' && l.itemId ? items.find((i) => i.id === l.itemId) : undefined;
           const dpu = round2(l.discountPerUnit ?? 0);
+          let cpu: number | null = null;
+          if (l.itemType === 'Product') {
+            if (l.costPerUnit != null && l.costPerUnit > 0) cpu = round2(l.costPerUnit);
+            else if (inv) cpu = round2(itemCapitalPerUnit(inv));
+          }
           return {
             itemId: l.itemType === 'Product' ? l.itemId : null,
             itemName: l.name,
@@ -379,14 +438,16 @@ export const POSView: React.FC<POSViewProps> = ({
             unitPrice: l.unitPrice,
             lineSubtotal: round2(l.qty * l.unitPrice),
             discountPerUnit: dpu > 0 ? dpu : null,
-            costPerUnit:
-              l.itemType === 'Product' && inv ? round2(itemCapitalPerUnit(inv)) : null,
+            costPerUnit: cpu,
           };
         });
         const totalUnits = cart.reduce((s, l) => s + l.qty, 0);
         const payload: Parameters<typeof transactionsApi.create>[0] = {
           id: crypto.randomUUID(),
-          itemId: cart.length === 1 && cart[0]!.itemType === 'Product' ? cart[0]!.itemId! : undefined,
+          itemId:
+            cart.length === 1 && cart[0]!.itemType === 'Product' && cart[0]!.itemId
+              ? cart[0]!.itemId!
+              : undefined,
           itemName: cart.map((c) => c.name).join(', ').slice(0, 200),
           type: 'RELEASE',
           quantityChange: -totalUnits,
@@ -395,13 +456,20 @@ export const POSView: React.FC<POSViewProps> = ({
           timestamp: saleTimestamp,
           transactionDate: saleTimestamp,
           recipient: recipientName,
-          note: note.trim() || undefined,
+          note:
+            [note.trim(), historicalSale ? 'Historical sale (migration from manual records)' : '']
+              .filter(Boolean)
+              .join(' · ') || undefined,
           modeOfPayment,
           personId,
           vehicleId,
           itemType: cart.some((c) => c.itemType === 'Product') ? 'Product' : 'Service',
           posLineItems,
           subtotalBeforeDiscount: subtotal,
+          totalCostAtTime: totalCost,
+          netIncome,
+          bundledSale: cart.length > 1,
+          historicalSale: historicalSale || undefined,
         };
         if (totalLineDiscount > 0) {
           payload.discountAmount = totalLineDiscount;
@@ -464,6 +532,9 @@ export const POSView: React.FC<POSViewProps> = ({
         setChequeExpectedClearDate('');
         setChequeReference('');
         setTransactionDate(todayDateInputValue());
+        setHistoricalSale(false);
+        setMigrationProductName('');
+        setDraftCostPerUnit(0);
       })
       .catch((err) => {
         setError(err?.message ?? 'Sale failed.');
@@ -601,6 +672,26 @@ export const POSView: React.FC<POSViewProps> = ({
               today). This date is used on receipts, accounts receivable, dashboard activity, and{' '}
               <strong>Sales summary</strong> reports.
             </p>
+            <label className="mt-3 flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                checked={historicalSale}
+                onChange={(e) => {
+                  setHistoricalSale(e.target.checked);
+                  setDraftItemType('Product');
+                  setSelectedItemId('');
+                  setMigrationProductName('');
+                  setServiceName('');
+                  setDraftCostPerUnit(0);
+                  setCart([]);
+                }}
+              />
+              <span className="text-sm text-slate-700">
+                <strong>Past sale / migration</strong> — product was sold before this system or is not in inventory.
+                Stock is <strong>not</strong> deducted; sale still appears in reports and receivables.
+              </span>
+            </label>
           </div>
 
           <div className="relative">
@@ -703,15 +794,96 @@ export const POSView: React.FC<POSViewProps> = ({
                   setDraftItemType(e.target.value as DraftItemType);
                   setSelectedItemId('');
                   setServiceName('');
+                  setMigrationProductName('');
                   setDraftDiscountPerUnit(0);
                 }}
+                disabled={historicalSale}
               >
                 <option value="Product">Product</option>
                 <option value="Service">Servicing</option>
               </select>
+              {historicalSale && (
+                <p className="text-xs text-amber-800 mt-1">Migration mode uses product lines only (manual names allowed).</p>
+              )}
             </div>
 
             {draftItemType === 'Product' ? (
+              historicalSale ? (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Product name <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white"
+                      placeholder="e.g. N120L/F51L — type what was sold"
+                      value={migrationProductName}
+                      onChange={(e) => setMigrationProductName(e.target.value)}
+                    />
+                    <p className="text-xs text-slate-500 mt-1">
+                      Does not need to exist in inventory. You can still pick a catalog item below to prefill name and
+                      price.
+                    </p>
+                  </div>
+                  <div className="relative">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Link to inventory item (optional)
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full px-3 py-2 pr-10 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white"
+                      placeholder="Search catalog to prefill…"
+                      value={activeDraftItem?.name ?? ''}
+                      readOnly
+                      onFocus={() => setIsItemDropdownOpen(true)}
+                      onBlur={() => setTimeout(() => setIsItemDropdownOpen(false), 200)}
+                    />
+                    <ChevronDown className="absolute right-3 top-9 w-4 h-4 text-slate-400 pointer-events-none" />
+                    {isItemDropdownOpen && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                        {itemSuggestions.length === 0 ? (
+                          <div className="px-4 py-3 text-sm text-slate-500">No for-sale items in catalog.</div>
+                        ) : (
+                          itemSuggestions.map((i) => (
+                            <button
+                              key={i.id}
+                              type="button"
+                              className="w-full text-left px-4 py-2 hover:bg-indigo-50 text-sm border-b border-slate-50"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => {
+                                setSelectedItemId(i.id);
+                                setMigrationProductName(i.name);
+                                setDraftPrice(i.unitPrice ?? 0);
+                                setDraftCostPerUnit(round2(itemCapitalPerUnit(i)));
+                                setDraftQty(1);
+                                setIsItemDropdownOpen(false);
+                              }}
+                            >
+                              <div className="font-medium">{i.name}</div>
+                              <div className="text-xs text-slate-500">
+                                Stock: {i.quantity ?? 0} (not deducted) · SRP ₱{itemRetailPerUnit(i).toFixed(2)}
+                              </div>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Unit cost (₱) — optional</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      className="w-full max-w-xs px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white"
+                      value={draftCostPerUnit}
+                      onChange={(e) => setDraftCostPerUnit(Math.max(0, Number(e.target.value) || 0))}
+                    />
+                    <p className="text-xs text-slate-500 mt-1">For sales summary COGS. Leave 0 if unknown.</p>
+                  </div>
+                </div>
+              ) : (
               <div className="relative">
                 <label className="block text-sm font-medium text-slate-700 mb-1">Item</label>
                 <input
@@ -758,6 +930,7 @@ export const POSView: React.FC<POSViewProps> = ({
                   </div>
                 )}
               </div>
+              )
             ) : (
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Servicing name</label>

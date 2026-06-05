@@ -24,6 +24,7 @@ const LEGACY_UNPREFIXED_COLLECTIONS = [
   'loans',
   'loan_payments',
   'document_archives',
+  'online_bookings',
 ];
 
 const __filename = fileURLToPath(import.meta.url);

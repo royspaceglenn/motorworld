@@ -3,6 +3,7 @@ import type {
   InventoryItem,
   Loan,
   LoanPayment,
+  OnlineBooking,
   Person,
   Purchase,
   Supplier,
@@ -652,4 +653,30 @@ export const paymentJournalApi = {
         offset: String(params.offset ?? 0),
       })}`
     ),
+};
+
+export const bookingsApi = {
+  list: (params?: { status?: OnlineBooking['status'] }) => {
+    const q = params?.status ? `?status=${encodeURIComponent(params.status)}` : '';
+    return request<{ bookings: OnlineBooking[] }>(`/api/bookings${q}`);
+  },
+  get: (id: string) => request<{ booking: OnlineBooking }>(`/api/bookings/${encodeURIComponent(id)}`),
+  confirm: (
+    id: string,
+    payload: {
+      quotedAmount?: number;
+      modeOfPayment?: string;
+      dueDays?: number;
+      confirmNote?: string;
+    }
+  ) =>
+    request<{ booking: OnlineBooking; transaction: Transaction }>(
+      `/api/bookings/${encodeURIComponent(id)}/confirm`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    ),
+  cancel: (id: string, payload?: { reason?: string }) =>
+    request<{ booking: OnlineBooking }>(`/api/bookings/${encodeURIComponent(id)}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify(payload ?? {}),
+    }),
 };

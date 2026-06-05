@@ -171,10 +171,12 @@ router.post('/', requireAdmin, async (req, res) => {
     const quantity = Math.abs(Number(payload.quantityChange ?? 0));
     const type = String(payload.type || '');
     const posLines = Array.isArray(payload.posLineItems) ? payload.posLineItems : [];
-    const hasPosProductLines = posLines.some((l) => l.itemType === 'Product' && l.itemId);
+    const historicalSale = Boolean(payload.historicalSale);
+    const hasPosBasket = posLines.length > 0;
+    const hasPosProductLines = posLines.some((l) => l.itemType === 'Product' && (l.itemId || historicalSale));
     const item = payload.itemId ? await getItemById(payload.itemId) : null;
 
-    if (itemType === 'Product' && !item && !(type === 'RELEASE' && hasPosProductLines)) {
+    if (itemType === 'Product' && !item && !(type === 'RELEASE' && (hasPosBasket || historicalSale))) {
       return res.status(404).json({ error: 'Inventory item not found.' });
     }
     if (quantity <= 0) {
@@ -185,7 +187,7 @@ router.post('/', requireAdmin, async (req, res) => {
       payload.timestamp = resolveTransactionTimestamp(payload);
     }
 
-    if (type === 'RELEASE' && hasPosProductLines) {
+    if (type === 'RELEASE' && hasPosProductLines && !historicalSale) {
       for (const line of posLines) {
         if (line.itemType !== 'Product' || !line.itemId) continue;
         const lineQty = Math.abs(Number(line.quantity) || 0);
@@ -196,11 +198,11 @@ router.post('/', requireAdmin, async (req, res) => {
           return res.status(400).json({ error: `Insufficient stock for ${inv.name}.` });
         }
       }
-    } else if ((type === 'RELEASE' || type === 'ISSUE') && item && item.quantity < quantity) {
+    } else if ((type === 'RELEASE' || type === 'ISSUE') && item && !historicalSale && item.quantity < quantity) {
       return res.status(400).json({ error: 'Insufficient stock.' });
     }
 
-    if (type === 'RELEASE' && hasPosProductLines) {
+    if (type === 'RELEASE' && hasPosProductLines && !historicalSale) {
       const saleTimestamp = payload.timestamp;
       for (const line of posLines) {
         if (line.itemType !== 'Product' || !line.itemId) continue;
@@ -254,6 +256,8 @@ router.post('/', requireAdmin, async (req, res) => {
     const created = await addTransaction({
       ...payload,
       itemType,
+      historicalSale: historicalSale || undefined,
+      bundledSale: hasPosBasket && posLines.length > 1 ? true : payload.bundledSale,
       releasedBy: req.user.displayName,
       chequeExpectedClearDate:
         mode === 'Cheque' ? String(payload.chequeExpectedClearDate || '').trim() || null : null,

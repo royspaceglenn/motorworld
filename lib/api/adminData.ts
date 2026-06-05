@@ -25,6 +25,7 @@ export const purchasesApi = data.purchasesApi;
 export const paymentJournalApi = data.paymentJournalApi;
 export const documentArchivesApi = data.documentArchivesApi;
 export const systemApi = data.systemApi;
+export const bookingsApi = data.bookingsApi;
 
 export type {
   ApiUser,

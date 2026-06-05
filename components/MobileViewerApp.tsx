@@ -8,6 +8,7 @@ import {
   isViewerFirebaseConfigured,
   getViewerFirestore,
 } from '../lib/firebase/viewerFirebase';
+import { formatLowStockAlertThreshold, isLowStockItem } from '../lib/inventoryPricing';
 import { Button } from './ui/Button';
 import { InlineAlert } from './ui/InlineAlert';
 import {
@@ -182,7 +183,7 @@ export const MobileViewerApp: React.FC = () => {
             0
           ),
           lowStockCount: nextInventory.filter(
-            (item) => Number(item.quantity || 0) <= Number(item.minStockLevel || 0)
+            (item) => isLowStockItem(item)
           ).length,
           recentActivityCount: nextHistory.slice(0, 20).length,
           expenseTotalMonth: nextExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0),
@@ -236,7 +237,7 @@ export const MobileViewerApp: React.FC = () => {
   };
 
   const lowStockItems = useMemo(
-    () => inventory.filter((item) => Number(item.quantity || 0) <= Number(item.minStockLevel || 0)),
+    () => inventory.filter((item) => isLowStockItem(item)),
     [inventory]
   );
 
@@ -516,7 +517,7 @@ export const MobileViewerApp: React.FC = () => {
                               <p className="text-sm font-semibold text-amber-700">
                                 {item.quantity} {item.unit}
                               </p>
-                              <p className="text-xs text-slate-400">Min {item.minStockLevel}</p>
+                              <p className="text-xs text-slate-400">Alert ≤ {formatLowStockAlertThreshold(item.minStockLevel)}</p>
                             </div>
                           </div>
                         ))}

@@ -834,3 +834,18 @@ export const systemApi = {
     throw new Error('Wiping all business data requires the REST API backend, not Firebase.');
   },
 };
+
+export const bookingsApi = {
+  list: async () => {
+    throw new Error('Online bookings require the REST API backend, not Firebase.');
+  },
+  get: async (_id: string) => {
+    throw new Error('Online bookings require the REST API backend, not Firebase.');
+  },
+  confirm: async (_id: string, _payload: Record<string, unknown>) => {
+    throw new Error('Online bookings require the REST API backend, not Firebase.');
+  },
+  cancel: async (_id: string) => {
+    throw new Error('Online bookings require the REST API backend, not Firebase.');
+  },
+};

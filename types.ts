@@ -41,6 +41,7 @@ export interface InventoryItem {
   /** Cost / capital per unit (COGS). Gross profit per unit = unitPrice − capitalPrice. When omitted, treated as unitPrice (zero margin). */
   capitalPrice?: number;
   description: string;
+  /** Alert when quantity ≤ this value. Use `-1` to turn off low-stock alerts for this item. */
   minStockLevel: number;
   lastUpdated: string;
   /** When the item record was first created in the system (ISO). May match lastUpdated for legacy rows. */
@@ -127,6 +128,8 @@ export interface Transaction {
   totalCostAtTime?: number | null;
   /** More than one line item — return-from-sales is not supported for this receipt. */
   bundledSale?: boolean | null;
+  /** Past sale encoded during manual→system migration; inventory was not deducted. */
+  historicalSale?: boolean | null;
 }
 
 export interface DashboardStats {
@@ -232,6 +235,33 @@ export interface Expense {
   recordedBy: string;
   recordedByUserId?: string | null;
   createdAt?: string;
+}
+
+export type OnlineBookingStatus = 'pending' | 'confirmed' | 'cancelled';
+
+/** Website service booking (Motor World public form → staff confirm in aiosystem). */
+export interface OnlineBooking {
+  id: string;
+  shopId?: string | null;
+  fullName: string;
+  phone: string;
+  email: string;
+  serviceKey: string;
+  serviceLabel: string;
+  preferredDate?: string | null;
+  vehicleDescription?: string | null;
+  notes?: string | null;
+  status: OnlineBookingStatus;
+  createdAt: string;
+  updatedAt?: string | null;
+  confirmedAt?: string | null;
+  confirmedBy?: string | null;
+  personId?: string | null;
+  vehicleId?: string | null;
+  transactionId?: string | null;
+  quotedAmount?: number | null;
+  modeOfPayment?: string | null;
+  confirmNote?: string | null;
 }
 
 // --- Purchasing (Supplier → Receive → Inventory) ---

@@ -39,3 +39,16 @@ export function itemStockGrossProfit(item: InventoryItem): number {
 export function grossProfitPerUnitNumbers(retail: number, capital: number): number {
   return round2(num(retail) - num(capital));
 }
+
+/** `minStockLevel < 0` disables low-stock alerts. Otherwise alert when on-hand qty ≤ threshold. */
+export function isLowStockItem(item: Pick<InventoryItem, 'quantity' | 'minStockLevel'>): boolean {
+  const min = num(item.minStockLevel, 0);
+  if (min < 0) return false;
+  return num(item.quantity) <= min;
+}
+
+export function formatLowStockAlertThreshold(minStockLevel: number | undefined | null): string {
+  const min = num(minStockLevel, 0);
+  if (min < 0) return 'Off';
+  return String(min);
+}

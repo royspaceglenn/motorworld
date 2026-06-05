@@ -26,6 +26,7 @@ import { HistoryTable } from './components/HistoryTable';
 import { AddItemModal } from './components/AddItemModal';
 import { ReleaseModal } from './components/ReleaseModal';
 import { IssueModal } from './components/IssueModal';
+import { formatLowStockAlertThreshold, isLowStockItem } from './lib/inventoryPricing';
 import { dateInputToIsoTimestamp, todayDateInputValue } from './lib/transactionDate';
 import { ReturnModal } from './components/ReturnModal';
 import { ReturnFromSalesModal } from './components/ReturnFromSalesModal';
@@ -45,6 +46,7 @@ import { SalesSummaryReportView } from './components/SalesSummaryReportView';
 import { BillingStatementView } from './components/BillingStatementView';
 import { BillingStatementPrintModal } from './components/BillingStatementPrintModal';
 import { DocumentArchivesView } from './components/DocumentArchivesView';
+import { OnlineBookingsView } from './components/OnlineBookingsView';
 import { DocumentPrintPreviewModal } from './components/DocumentPrintPreviewModal';
 import { subscribeDocumentPreview } from './lib/documentPreviewBus';
 import type { DocumentPreviewDoc } from './lib/documentPreviewBus';
@@ -86,6 +88,7 @@ import {
   FileText,
   Archive,
   LogOut,
+  CalendarClock,
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
@@ -103,7 +106,8 @@ type AppView =
   | 'expenses'
   | 'purchasing'
   | 'pos'
-  | 'document_archives';
+  | 'document_archives'
+  | 'online_bookings';
 
 const App: React.FC = () => {
   const { user, logout } = useAuth();
@@ -351,29 +355,18 @@ const App: React.FC = () => {
       const v = Number((i as any).unitPrice ?? (i as any).unit_price ?? 0);
       return Number.isFinite(v) ? v : 0;
     };
-    const minLevel = (i: InventoryItem) => {
-      const v = Number(i.minStockLevel ?? (i as any).min_stock_level ?? 0);
-      return Number.isFinite(v) ? v : 0;
-    };
-
     const totalVal = items.reduce((acc, i) => acc + qty(i) * price(i), 0);
 
     return {
       totalItems: items.reduce((acc, i) => acc + qty(i), 0),
       totalInventoryValue: Number.isFinite(totalVal) ? totalVal : 0,
-      lowStockCount: items.filter(i => qty(i) <= minLevel(i)).length,
+      lowStockCount: items.filter((i) => isLowStockItem(i)).length,
       recentActivityCount: recentTx.length
     };
   }, [items, transactions]);
 
   const lowStockItems = useMemo(() => {
-    return items
-      .filter((item) => {
-        const quantity = Number(item.quantity ?? 0);
-        const minStock = Number(item.minStockLevel ?? (item as any).min_stock_level ?? 0);
-        return quantity <= minStock;
-      })
-      .sort((a, b) => a.name.localeCompare(b.name));
+    return items.filter((item) => isLowStockItem(item)).sort((a, b) => a.name.localeCompare(b.name));
   }, [items]);
 
   const chequeReminders = useMemo(() => {
@@ -937,7 +930,14 @@ const App: React.FC = () => {
       title: 'Manage Users',
       description: 'Control account access and permissions for this system.',
     },
+    online_bookings: {
+      title: 'Online bookings',
+      description: 'Website service requests — confirm to create customer records and service sales.',
+    },
   };
+
+  const activeShopId = getStoredActiveShopId();
+  const isMotorWorldShop = activeShopId === 'motorworld';
 
   const navigationSections: Array<{
     title: string;
@@ -960,6 +960,9 @@ const App: React.FC = () => {
       items: [
         { id: 'purchasing', label: 'Purchasing', icon: Truck },
         { id: 'pos', label: 'POS', icon: ShoppingBag },
+        ...(isMotorWorldShop
+          ? [{ id: 'online_bookings' as AppView, label: 'Online bookings', icon: CalendarClock }]
+          : []),
         { id: 'receivables', label: 'Receivables', icon: CreditCard },
         { id: 'accounts', label: 'Accounts', icon: UserCircle },
         { id: 'expenses', label: 'Expenses', icon: Receipt },
@@ -1383,7 +1386,7 @@ const App: React.FC = () => {
                             <p className="text-sm font-semibold text-amber-700">
                               {item.quantity} {item.unit || 'pcs'}
                             </p>
-                            <p className="text-xs text-slate-400">Min {item.minStockLevel}</p>
+                            <p className="text-xs text-slate-400">Alert ≤ {formatLowStockAlertThreshold(item.minStockLevel)}</p>
                           </div>
                         </div>
                       ))}
@@ -1421,6 +1424,15 @@ const App: React.FC = () => {
               vehicles={vehicles}
               canEdit={canEdit}
               onSaleComplete={fetchItemsAndTransactions}
+            />
+          </div>
+        )}
+        {view === 'online_bookings' && (
+          <div>
+            <OnlineBookingsView
+              canEdit={canEdit}
+              isMotorWorldShop={isMotorWorldShop}
+              onBookingConfirmed={fetchItemsAndTransactions}
             />
           </div>
         )}

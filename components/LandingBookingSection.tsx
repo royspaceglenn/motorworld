@@ -10,6 +10,7 @@ import {
   TIKTOK_PAGE_URL,
 } from '../lib/company';
 import { LANDING_BOOKING_SERVICE_OPTIONS } from '../lib/landingBookingServices';
+import { submitMotorWorldOnlineBooking } from '../lib/publicBookings';
 import { MapPin, Phone, Mail, Clock, Facebook, Instagram } from 'lucide-react';
 
 const RED = '#E31837';
@@ -46,11 +47,14 @@ export function LandingBookingSection() {
   const [vehicle, setVehicle] = useState('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [success, setSuccess] = useState('');
 
   const submit = useCallback(
-    (e: React.FormEvent) => {
+    async (e: React.FormEvent) => {
       e.preventDefault();
       setError('');
+      setSuccess('');
       if (!fullName.trim() || !phone.trim() || !email.trim() || !service) {
         setError('Please fill in name, phone, email, and service.');
         return;
@@ -59,21 +63,36 @@ export function LandingBookingSection() {
         setError('Please enter a valid email address.');
         return;
       }
-      const lines = [
-        `Booking request — ${fullName}`,
-        '',
-        `Phone: ${phone}`,
-        `Email: ${email}`,
-        `Service: ${LANDING_BOOKING_SERVICE_OPTIONS.find((o) => o.value === service)?.label || service}`,
-        `Preferred date: ${preferredDate || '—'}`,
-        `Vehicle: ${vehicle || '—'}`,
-        '',
-        'Notes:',
-        notes || '—',
-      ];
-      const body = encodeURIComponent(lines.join('\n'));
-      const subject = encodeURIComponent('Motor World — service booking request');
-      window.location.href = `mailto:${BOOKING_EMAIL}?subject=${subject}&body=${body}`;
+      const serviceLabel =
+        LANDING_BOOKING_SERVICE_OPTIONS.find((o) => o.value === service)?.label || service;
+      setSubmitting(true);
+      try {
+        const result = await submitMotorWorldOnlineBooking({
+          fullName: fullName.trim(),
+          phone: phone.trim(),
+          email: email.trim(),
+          serviceKey: service,
+          serviceLabel,
+          preferredDate: preferredDate || undefined,
+          vehicleDescription: vehicle.trim() || undefined,
+          notes: notes.trim() || undefined,
+        });
+        setSuccess(
+          result.message ||
+            'Booking received! Our team will confirm your schedule and contact you soon.'
+        );
+        setFullName('');
+        setPhone('');
+        setEmail('');
+        setService('');
+        setPreferredDate('');
+        setVehicle('');
+        setNotes('');
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Could not submit booking. Try again or message us on Facebook.');
+      } finally {
+        setSubmitting(false);
+      }
     },
     [email, fullName, notes, phone, preferredDate, service, vehicle],
   );
@@ -161,6 +180,11 @@ export function LandingBookingSection() {
             {error ? (
               <div className="rounded-md border border-red-500/40 bg-red-950/40 px-3 py-2 text-sm text-red-200">
                 {error}
+              </div>
+            ) : null}
+            {success ? (
+              <div className="rounded-md border border-emerald-600/40 bg-emerald-950/40 px-3 py-2 text-sm text-emerald-200">
+                {success}
               </div>
             ) : null}
 
@@ -269,13 +293,14 @@ export function LandingBookingSection() {
 
             <button
               type="submit"
-              className="w-full rounded-sm py-3.5 text-xs font-black uppercase tracking-[0.15em] text-white shadow-lg transition hover:opacity-95"
+              disabled={submitting}
+              className="w-full rounded-sm py-3.5 text-xs font-black uppercase tracking-[0.15em] text-white shadow-lg transition hover:opacity-95 disabled:opacity-60"
               style={{ backgroundColor: RED }}
             >
-              Request booking
+              {submitting ? 'Sending…' : 'Request booking'}
             </button>
             <p className="text-center text-[10px] text-zinc-600">
-              Opens your email app with this request — or message us on{' '}
+              Submitted online to our team — or message us on{' '}
               <a href={FACEBOOK_BUSINESS_PAGE_URL} className="text-zinc-400 underline hover:text-white" target="_blank" rel="noopener noreferrer">
                 Facebook
               </a>{' '}

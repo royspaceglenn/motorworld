@@ -32,6 +32,8 @@ export const COLLECTIONS = {
   loanPayments: 'loan_payments',
   /** Archived POS receipts & billing snapshots for search and audit. */
   documentArchives: 'document_archives',
+  /** Website service booking requests (Motor World public site). */
+  onlineBookings: 'online_bookings',
 };
 
 let initialized = false;
@@ -238,6 +240,12 @@ function transactionToApi(tx) {
     editedAt: tx.edited_at ?? tx.editedAt ?? null,
     editNote: tx.edit_note ?? tx.editNote ?? null,
     shopId: tx.shop_id ?? tx.shopId ?? null,
+    historicalSale: Boolean(tx.historical_sale ?? tx.historicalSale),
+    subtotalBeforeDiscount:
+      tx.subtotal_before_discount != null ? normalizeNumber(tx.subtotal_before_discount) : null,
+    totalCostAtTime: tx.total_cost_at_time != null ? normalizeNumber(tx.total_cost_at_time) : null,
+    netIncome: tx.net_income != null ? normalizeNumber(tx.net_income) : null,
+    bundledSale: tx.bundled_sale != null ? Boolean(tx.bundled_sale) : null,
   };
 }
 
@@ -803,6 +811,12 @@ export async function addTransaction(tx) {
     edited_at: tx.editedAt ?? tx.edited_at ?? null,
     edit_note: tx.editNote ?? tx.edit_note ?? null,
     shop_id: tx.shopId ?? tx.shop_id ?? getActiveShopId(),
+    historical_sale: Boolean(tx.historicalSale ?? tx.historical_sale),
+    subtotal_before_discount:
+      tx.subtotalBeforeDiscount != null ? normalizeNumber(tx.subtotalBeforeDiscount) : null,
+    total_cost_at_time: tx.totalCostAtTime != null ? normalizeNumber(tx.totalCostAtTime) : null,
+    net_income: tx.netIncome != null ? normalizeNumber(tx.netIncome) : null,
+    bundled_sale: tx.bundledSale != null ? Boolean(tx.bundledSale) : null,
   };
   transactions.unshift(raw);
   await collectionsBackend.writeCollection(COLLECTIONS.transactions, transactions);
@@ -1776,6 +1790,239 @@ export async function updateDocumentArchiveSnapshot(id, { transactionSnapshot, e
 
 export async function listRawCollection(name) {
   return await collectionsBackend.readCollection(name, []);
+}
+
+function bookingToApi(row) {
+  return {
+    id: row.id,
+    fullName: normalizeString(row.full_name ?? row.fullName),
+    phone: normalizeString(row.phone),
+    email: normalizeString(row.email),
+    serviceKey: normalizeString(row.service_key ?? row.serviceKey),
+    serviceLabel: normalizeString(row.service_label ?? row.serviceLabel),
+    preferredDate: row.preferred_date ?? row.preferredDate ?? null,
+    vehicleDescription: row.vehicle_description ?? row.vehicleDescription ?? null,
+    notes: row.notes ?? null,
+    status: normalizeString(row.status ?? 'pending'),
+    createdAt: row.created_at ?? row.createdAt ?? nowIso(),
+    updatedAt: row.updated_at ?? row.updatedAt ?? null,
+    confirmedAt: row.confirmed_at ?? row.confirmedAt ?? null,
+    confirmedBy: row.confirmed_by ?? row.confirmedBy ?? null,
+    personId: row.person_id ?? row.personId ?? null,
+    vehicleId: row.vehicle_id ?? row.vehicleId ?? null,
+    transactionId: row.transaction_id ?? row.transactionId ?? null,
+    quotedAmount:
+      row.quoted_amount != null || row.quotedAmount != null
+        ? normalizeNumber(row.quoted_amount ?? row.quotedAmount)
+        : null,
+    modeOfPayment: row.mode_of_payment ?? row.modeOfPayment ?? null,
+    confirmNote: row.confirm_note ?? row.confirmNote ?? null,
+    shopId: row.shop_id ?? row.shopId ?? getActiveShopId(),
+  };
+}
+
+export async function getOnlineBookings({ status } = {}) {
+  const rows = await collectionsBackend.readCollection(COLLECTIONS.onlineBookings, []);
+  let list = rows.map(bookingToApi);
+  if (status) {
+    const s = String(status).trim().toLowerCase();
+    list = list.filter((b) => String(b.status).toLowerCase() === s);
+  }
+  return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+export async function getOnlineBookingById(id) {
+  const row = (await collectionsBackend.readCollection(COLLECTIONS.onlineBookings, [])).find(
+    (b) => b.id === id
+  );
+  return row ? bookingToApi(row) : null;
+}
+
+export async function createOnlineBooking(data) {
+  const bookings = await collectionsBackend.readCollection(COLLECTIONS.onlineBookings, []);
+  const created = {
+    id: data.id || crypto.randomUUID(),
+    full_name: String(data.fullName || '').trim(),
+    phone: String(data.phone || '').trim(),
+    email: String(data.email || '').trim(),
+    service_key: String(data.serviceKey || '').trim(),
+    service_label: String(data.serviceLabel || '').trim(),
+    preferred_date: data.preferredDate ? String(data.preferredDate).trim() : null,
+    vehicle_description: data.vehicleDescription ? String(data.vehicleDescription).trim() : null,
+    notes: data.notes ? String(data.notes).trim() : null,
+    status: 'pending',
+    created_at: nowIso(),
+    updated_at: null,
+    confirmed_at: null,
+    confirmed_by: null,
+    person_id: null,
+    vehicle_id: null,
+    transaction_id: null,
+    quoted_amount: null,
+    mode_of_payment: null,
+    confirm_note: null,
+    shop_id: getActiveShopId(),
+  };
+  bookings.unshift(created);
+  await collectionsBackend.writeCollection(COLLECTIONS.onlineBookings, bookings);
+  return bookingToApi(created);
+}
+
+async function findOrCreatePersonForBooking(bookingRow) {
+  const persons = await collectionsBackend.readCollection(COLLECTIONS.persons, []);
+  const email = String(bookingRow.email || '').trim().toLowerCase();
+  const phoneDigits = String(bookingRow.phone || '').replace(/\D/g, '');
+  let found = persons.find((p) => String(p.email || '').trim().toLowerCase() === email && email);
+  if (!found && phoneDigits) {
+    found = persons.find((p) => String(p.contact_number || '').replace(/\D/g, '') === phoneDigits);
+  }
+  if (found) return personToApi(found);
+  return createPerson({
+    fullName: bookingRow.full_name,
+    contactNumber: bookingRow.phone || '',
+    email: bookingRow.email || '',
+  });
+}
+
+async function findOrCreateVehicleForBooking(personId, bookingRow) {
+  const desc = String(bookingRow.vehicle_description || '').trim();
+  if (!desc) return null;
+  const vehicles = await collectionsBackend.readCollection(COLLECTIONS.vehicles, []);
+  const plate = `WEB-${String(bookingRow.id).slice(0, 8).toUpperCase()}`;
+  const existing = vehicles.find(
+    (v) => v.person_id === personId && String(v.plate_number || '').toUpperCase() === plate
+  );
+  if (existing) return vehicleToApi(existing);
+  return createVehicle({
+    personId,
+    plateNumber: plate,
+    brand: desc.slice(0, 120),
+  });
+}
+
+/**
+ * Confirm a pending booking: ensure customer + vehicle, post a Service RELEASE, link IDs.
+ */
+export async function confirmOnlineBooking(id, options = {}) {
+  const bookings = await collectionsBackend.readCollection(COLLECTIONS.onlineBookings, []);
+  const index = bookings.findIndex((b) => b.id === id);
+  if (index === -1) throw new Error('Booking not found.');
+  const row = bookings[index];
+  if (String(row.status) !== 'pending') {
+    throw new Error('Only pending bookings can be confirmed.');
+  }
+
+  const quotedAmount = Math.max(0, normalizeNumber(options.quotedAmount ?? 0));
+  const modeOfPayment = String(options.modeOfPayment || 'Cash').trim() || 'Cash';
+  const confirmNote = String(options.confirmNote || '').trim();
+  const confirmedBy = String(options.confirmedBy || '').trim();
+  const dueDays =
+    options.dueDays != null ? Math.min(365, Math.max(1, Number(options.dueDays) || 30)) : 30;
+
+  const person = await findOrCreatePersonForBooking(row);
+  const vehicle = await findOrCreateVehicleForBooking(person.id, row);
+
+  const preferred = String(row.preferred_date || '').trim();
+  const timestamp =
+    preferred && /^\d{4}-\d{2}-\d{2}$/.test(preferred)
+      ? new Date(`${preferred}T12:00:00`).toISOString()
+      : nowIso();
+
+  const serviceLabel = String(row.service_label || 'Online booking service').trim();
+  const noteParts = [
+    `Online booking #${String(row.id).slice(0, 8)}`,
+    row.notes ? String(row.notes).trim() : '',
+    confirmNote,
+  ].filter(Boolean);
+
+  const txPayload = {
+    id: crypto.randomUUID(),
+    type: 'RELEASE',
+    itemType: 'Service',
+    itemName: serviceLabel,
+    quantityChange: -1,
+    unitPriceAtTime: quotedAmount,
+    totalValue: quotedAmount,
+    timestamp,
+    recipient: row.full_name,
+    personId: person.id,
+    vehicleId: vehicle?.id ?? null,
+    note: noteParts.join(' · '),
+    modeOfPayment,
+    releasedBy: confirmedBy || null,
+    posLineItems: [
+      {
+        itemType: 'Service',
+        itemName: serviceLabel,
+        quantity: 1,
+        unitPrice: quotedAmount,
+        lineSubtotal: quotedAmount,
+      },
+    ],
+  };
+  if (modeOfPayment === 'Credit') {
+    txPayload.dueDays = dueDays;
+  }
+
+  const createdTx = await addTransaction(txPayload);
+
+  if (modeOfPayment !== 'Cash' && createdTx.recipient) {
+    try {
+      await syncReceivablesForRelease(createdTx, txPayload);
+    } catch (receivableErr) {
+      throw new Error(receivableErr?.message || 'Failed to create receivable for this booking.');
+    }
+  }
+
+  const now = nowIso();
+  bookings[index] = {
+    ...row,
+    status: 'confirmed',
+    updated_at: now,
+    confirmed_at: now,
+    confirmed_by: confirmedBy || null,
+    person_id: person.id,
+    vehicle_id: vehicle?.id ?? null,
+    transaction_id: createdTx.id,
+    quoted_amount: quotedAmount,
+    mode_of_payment: modeOfPayment,
+    confirm_note: confirmNote || null,
+  };
+  await collectionsBackend.writeCollection(COLLECTIONS.onlineBookings, bookings);
+  return { booking: bookingToApi(bookings[index]), transaction: createdTx, person, vehicle };
+}
+
+export async function cancelOnlineBooking(id, { cancelledBy, reason } = {}) {
+  const bookings = await collectionsBackend.readCollection(COLLECTIONS.onlineBookings, []);
+  const index = bookings.findIndex((b) => b.id === id);
+  if (index === -1) throw new Error('Booking not found.');
+  if (String(bookings[index].status) !== 'pending') {
+    throw new Error('Only pending bookings can be cancelled.');
+  }
+  const now = nowIso();
+  bookings[index] = {
+    ...bookings[index],
+    status: 'cancelled',
+    updated_at: now,
+    confirm_note: reason ? String(reason).trim() : null,
+    confirmed_by: cancelledBy ? String(cancelledBy).trim() : null,
+  };
+  await collectionsBackend.writeCollection(COLLECTIONS.onlineBookings, bookings);
+  return bookingToApi(bookings[index]);
+}
+
+export async function notifyAdminsOnlineBooking(booking) {
+  const users = await getUsers();
+  const admins = users.filter((u) => u.role === 'admin' || u.role === 'overseer');
+  const message = `New online booking: ${booking.fullName} — ${booking.serviceLabel}`;
+  for (const admin of admins) {
+    await addNotification({
+      source_user_id: admin.id,
+      action_type: 'ONLINE_BOOKING',
+      message,
+      read: 0,
+    });
+  }
 }
 
 export {

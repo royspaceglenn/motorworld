@@ -119,7 +119,11 @@ async function buildViewerPayload(settings) {
     (sum, item) => sum + item.quantity * (item.capitalPrice ?? item.unitPrice ?? 0),
     0
   );
-  const lowStockCount = items.filter((item) => item.quantity <= item.minStockLevel).length;
+  const lowStockCount = items.filter((item) => {
+    const min = Number(item.minStockLevel ?? 0);
+    if (min < 0) return false;
+    return Number(item.quantity ?? 0) <= min;
+  }).length;
   const startOfMonth = new Date();
   startOfMonth.setDate(1);
   startOfMonth.setHours(0, 0, 0, 0);

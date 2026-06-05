@@ -1,6 +1,13 @@
 import React from 'react';
 import { InventoryItem, STOCK_PURPOSE_META, normalizeStockPurpose } from '../types';
-import { itemCapitalPerUnit, itemRetailPerUnit, itemStockGrossProfit, itemUnitGrossProfit } from '../lib/inventoryPricing';
+import {
+  formatLowStockAlertThreshold,
+  isLowStockItem,
+  itemCapitalPerUnit,
+  itemRetailPerUnit,
+  itemStockGrossProfit,
+  itemUnitGrossProfit,
+} from '../lib/inventoryPricing';
 import { Edit2, PackageMinus, Trash2, AlertTriangle, PackagePlus, Send, RotateCcw } from 'lucide-react';
 import { DashboardSurface } from './ui/DashboardPrimitives';
 
@@ -72,7 +79,8 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({ items, onEdit, o
               </tr>
             ) : (
               items.map((item) => {
-                const isLowStock = item.quantity <= item.minStockLevel;
+                const isLowStock = isLowStockItem(item);
+                const alertLabel = formatLowStockAlertThreshold(item.minStockLevel);
                 return (
                   <tr key={item.id} className="hover:bg-slate-50 transition-colors">
                     <td className="py-4 px-6">
@@ -82,7 +90,7 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({ items, onEdit, o
                           <div className="group relative">
                             <AlertTriangle className="w-4 h-4 text-amber-500 cursor-help" />
                             <span className="absolute left-6 top-0 w-max bg-slate-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                              Low Stock (&lt; {item.minStockLevel})
+                              Low stock — at or below alert level ({alertLabel})
                             </span>
                           </div>
                         )}
@@ -110,7 +118,10 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({ items, onEdit, o
                       })()}
                     </td>
                     <td className="py-4 px-6 text-right font-medium text-slate-700">
-                      {item.quantity} <span className="text-xs text-slate-400 font-normal">{item.unit || 'pcs'}</span>
+                      <div>{item.quantity} <span className="text-xs text-slate-400 font-normal">{item.unit || 'pcs'}</span></div>
+                      {alertLabel !== 'Off' && (
+                        <div className="text-xs font-normal text-slate-400">Alert ≤ {alertLabel}</div>
+                      )}
                     </td>
                     <td className="py-4 px-6 text-right">
                       {(item.defectiveQuantity ?? 0) > 0 ? (

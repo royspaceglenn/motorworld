@@ -20,6 +20,8 @@ import suppliersRoutes from './routes/suppliers.js';
 import purchasesRoutes from './routes/purchases.js';
 import paymentJournalRoutes from './routes/paymentJournal.js';
 import documentArchivesRoutes from './routes/documentArchives.js';
+import publicCatalogRoutes from './routes/publicCatalog.js';
+import bookingsRoutes from './routes/bookings.js';
 import { warmDatabaseConnection } from './db/collectionsBackend.js';
 import { ensureStoreInitialized } from './db/store.js';
 import { isEmergencyDbBypass } from './lib/emergencyAuth.js';
@@ -90,7 +92,9 @@ app.use(async (req, res, next) => {
   }
 });
 
+app.use('/api/public', publicCatalogRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/bookings', authMiddleware, shopScopeMiddleware, bookingsRoutes);
 app.use('/api/system', authMiddleware, systemRoutes);
 app.use('/api/users', authMiddleware, shopScopeMiddleware, usersRoutes);
 app.use('/api/activity', authMiddleware, shopScopeMiddleware, activityRoutes);

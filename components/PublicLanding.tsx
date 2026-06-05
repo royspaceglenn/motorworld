@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   COMPANY_DISPLAY_NAME,
   COMPANY_EXPANSION_NOTE,
@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { LandingBookingSection } from './LandingBookingSection';
 import { LandingHeroVideo } from './LandingHeroVideo';
+import { LandingProductsSection } from './LandingProductsSection';
 
 /** Services bento — mechanic / engine bay (Unsplash). */
 const SERVICE_MECHANIC_BG =
@@ -42,6 +43,8 @@ const ASPHALT = '#0a0a0a';
  * Staff POS path is never linked — see {@link OPS_APP_PATH}.
  */
 export const PublicLanding: React.FC = () => {
+  const [liveProductCount, setLiveProductCount] = useState<number | null>(null);
+
   const staffUrlExample =
     typeof window !== 'undefined'
       ? `${window.location.origin}${OPS_APP_PATH}`
@@ -182,9 +185,11 @@ export const PublicLanding: React.FC = () => {
                 </dd>
               </div>
               <div>
-                <dt className="text-2xl font-black text-white sm:text-3xl">{COMPANY_PRODUCTS.length}</dt>
+                <dt className="text-2xl font-black text-white sm:text-3xl">
+                  {liveProductCount ?? COMPANY_PRODUCTS.length}
+                </dt>
                 <dd className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 sm:text-xs">
-                  Product lines
+                  {liveProductCount != null ? 'In stock now' : 'Product lines'}
                 </dd>
               </div>
               <div>
@@ -363,37 +368,11 @@ export const PublicLanding: React.FC = () => {
           </div>
         </section>
 
-        <section id="products" className={sectionShell}>
-          <div className="mx-auto max-w-3xl">
-            <h2 className={h2}>Products</h2>
-            <p className="mt-4 text-sm leading-relaxed text-zinc-400 sm:text-base">
-              Quality automotive parts and supplies — retail, wholesale, and distribution for effective vehicle
-              servicing.
-            </p>
-            <ul className="mt-6 flex flex-wrap gap-2">
-              {COMPANY_PRODUCTS.map((p) => (
-                <li
-                  key={p}
-                  className="rounded-full border border-white/15 bg-zinc-900 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-200"
-                >
-                  {p}
-                </li>
-              ))}
-            </ul>
-            <p className="mt-6 text-sm text-zinc-400">
-              Stock updates and promos are posted on our Facebook page.
-            </p>
-            <a
-              href={FACEBOOK_BUSINESS_PAGE_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-8 inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-white underline decoration-red-600 underline-offset-4 hover:decoration-white"
-            >
-              <Facebook className="h-4 w-4" style={{ color: RED }} aria-hidden />
-              View updates on Facebook
-            </a>
-          </div>
-        </section>
+        <LandingProductsSection
+          sectionShell={sectionShell}
+          h2={h2}
+          onCountChange={setLiveProductCount}
+        />
 
         <section id="about" className={sectionShell}>
           <div className="mx-auto max-w-3xl space-y-6">
