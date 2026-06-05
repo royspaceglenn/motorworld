@@ -699,6 +699,57 @@ export const sr1ImportApi = {
     }>('/api/imports/sr1/apply', { method: 'POST', body: JSON.stringify(payload) }),
 };
 
+export type SalesReportUploadResult = {
+  fileName: string;
+  formatId: string;
+  formatLabel: string;
+  lineCount: number;
+  saleCount: number;
+  recordCount: number;
+  customers: string[];
+  dateRange: { start: string; end: string } | null;
+  warnings: string[];
+  parseErrors: string[];
+  records: Record<string, unknown>[];
+  sales?: Record<string, unknown>[];
+  applied: boolean;
+  import: {
+    created: number;
+    skipped: number;
+    personsCreated: number;
+    vehiclesCreated: number;
+    stockUnitsDeducted: number;
+    transactionIds: string[];
+    errors: string[];
+  } | null;
+};
+
+export const salesUploadApi = {
+  /** Upload SR-1 / sales register PDF; set apply=true to insert into POS ledger. */
+  uploadReport: (file: File, options?: { apply?: boolean; skipDuplicates?: boolean; formatId?: string }) => {
+    const form = new FormData();
+    form.append('file', file);
+    if (options?.apply != null) form.append('apply', String(options.apply));
+    if (options?.skipDuplicates != null) form.append('skipDuplicates', String(options.skipDuplicates));
+    if (options?.formatId) form.append('formatId', options.formatId);
+    const headers = new Headers();
+    const token = getStoredToken();
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    headers.set('X-Motor-Shop-Id', getStoredActiveShopId());
+    return fetch(`${getApiBase()}/api/sales/upload-report`, {
+      method: 'POST',
+      headers,
+      body: form,
+    }).then(async (response) => {
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new HttpError(response.status, data?.error || response.statusText);
+      }
+      return data as SalesReportUploadResult;
+    });
+  },
+};
+
 export const payrollApi = {
   listEmployees: () => request<{ employees: Employee[] }>('/api/payroll/employees'),
   createEmployee: (payload: Partial<Employee>) =>

@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { sr1ImportApi } from '../lib/api/adminData';
+import React, { useMemo, useRef, useState } from 'react';
+import { salesUploadApi, sr1ImportApi } from '../lib/api/adminData';
 import { extractTextFromPdfFile } from '../lib/sr1PdfExtract';
 import {
   parseSalesRegisterText,
@@ -44,6 +44,7 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
+  const uploadFileRef = useRef<File | null>(null);
 
   const previewSales = useMemo(() => parsed?.sales.slice(0, 12) ?? [], [parsed]);
 
@@ -58,6 +59,7 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
     setBusy(false);
     setError(null);
     setResult(null);
+    uploadFileRef.current = null;
   };
 
   const finishAndClose = () => {
@@ -69,7 +71,31 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
     setBusy(true);
     setError(null);
     setFileName(file.name);
+    uploadFileRef.current = file;
     try {
+      try {
+        const uploaded = await salesUploadApi.uploadReport(file, { apply: false, formatId });
+        if (uploaded.lineCount === 0 || !uploaded.sales?.length) {
+          throw new Error('Could not read sale lines from this PDF on the server.');
+        }
+        setParsed({
+          fileName: uploaded.fileName,
+          lineCount: uploaded.lineCount,
+          saleCount: uploaded.saleCount,
+          warnings: uploaded.warnings,
+          parseErrors: uploaded.parseErrors,
+          sales: uploaded.sales as SalesRegisterParseResult['sales'],
+          customers: uploaded.customers,
+          dateRange: uploaded.dateRange,
+          formatId: uploaded.formatId as SalesRegisterFormatId,
+          formatLabel: uploaded.formatLabel,
+        });
+        setStep('review');
+        return;
+      } catch {
+        /* fall back to browser PDF parse when API is offline */
+      }
+
       const text = await extractTextFromPdfFile(file);
       const res = parseSalesRegisterText(text, file.name, formatId);
       if (res.lineCount === 0) {
@@ -92,6 +118,31 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
     setBusy(true);
     setError(null);
     try {
+      const file = uploadFileRef.current;
+      if (file) {
+        const uploaded = await salesUploadApi.uploadReport(file, {
+          apply: true,
+          formatId,
+          skipDuplicates,
+        });
+        const res = uploaded.import;
+        if (!res) throw new Error('Import did not return a result.');
+        const msg = [
+          `${res.created} sale(s) recorded`,
+          res.stockUnitsDeducted > 0 ? `${res.stockUnitsDeducted} unit(s) deducted from stock` : '',
+          res.skipped > 0 ? `${res.skipped} skipped (already imported)` : '',
+          res.personsCreated > 0 ? `${res.personsCreated} customer(s) added` : '',
+          res.vehiclesCreated > 0 ? `${res.vehiclesCreated} vehicle(s) added` : '',
+          res.errors.length > 0 ? `${res.errors.length} error(s)` : '',
+        ]
+          .filter(Boolean)
+          .join(' · ');
+        setResult(msg);
+        setStep('done');
+        onImported();
+        return;
+      }
+
       const res = await sr1ImportApi.apply({
         sales: parsed.sales as unknown as Record<string, unknown>[],
         sourceFileName: fileName || parsed.fileName,
