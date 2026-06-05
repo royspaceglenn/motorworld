@@ -279,6 +279,10 @@ export interface SalesDepositReportRow {
   taxWithheld: number;
   discount: number;
   totalAmount: number;
+  /** Cost of goods and services sold for this receipt (capital/cost at sale). */
+  costAtSale: number;
+  /** Net sale total minus cost at sale (after discount, before shop expenses). */
+  lineGrossProfit: number;
   dateDepositedLabel: string;
   cashCardDeposited: number;
   checkDeposited: number;
@@ -291,7 +295,12 @@ export function saleReferenceForReport(t: Transaction): string {
   return `TX-${(t.id || '').slice(0, 8).toUpperCase()}`;
 }
 
-export function buildSalesDepositReportRows(transactions: Transaction[], start: Date, end: Date): SalesDepositReportRow[] {
+export function buildSalesDepositReportRows(
+  transactions: Transaction[],
+  items: InventoryItem[],
+  start: Date,
+  end: Date
+): SalesDepositReportRow[] {
   const startMs = start.getTime();
   const endMs = end.getTime();
   const inRange = (t: Transaction) => {
@@ -305,6 +314,8 @@ export function buildSalesDepositReportRows(transactions: Transaction[], start: 
       const { goods: materials, service: services } = releaseSplitGoodsServiceGross(t);
       const discount = releaseDiscountAmount(t);
       const totalAmount = round2(Number(t.totalValue || 0));
+      const costAtSale = releaseCogs(t, items);
+      const lineGrossProfit = round2(totalAmount - costAtSale);
       const mode = String(t.modeOfPayment || 'Cash').trim().toLowerCase();
 
       let dateDepositedLabel = '—';
@@ -352,6 +363,8 @@ export function buildSalesDepositReportRows(transactions: Transaction[], start: 
         taxWithheld: 0,
         discount: round2(discount),
         totalAmount,
+        costAtSale,
+        lineGrossProfit,
         dateDepositedLabel,
         cashCardDeposited: round2(cashCardDeposited),
         checkDeposited: round2(checkDeposited),

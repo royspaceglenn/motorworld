@@ -68,6 +68,8 @@ function printSalesSummary(
   let sumSvc = 0;
   let sumDisc = 0;
   let sumNet = 0;
+  let sumCost = 0;
+  let sumLineProfit = 0;
   let sumCash = 0;
   let sumChk = 0;
   for (const r of depositRows) {
@@ -75,6 +77,8 @@ function printSalesSummary(
     sumSvc = round2p(sumSvc + r.services);
     sumDisc = round2p(sumDisc + r.discount);
     sumNet = round2p(sumNet + r.totalAmount);
+    sumCost = round2p(sumCost + r.costAtSale);
+    sumLineProfit = round2p(sumLineProfit + r.lineGrossProfit);
     sumCash = round2p(sumCash + r.cashCardDeposited);
     sumChk = round2p(sumChk + r.checkDeposited);
   }
@@ -82,10 +86,11 @@ function printSalesSummary(
   const totalSalesGross = round2p(sumMat + sumSvc);
   const totalCollection = round2p(sumCash + sumChk);
   const netAfterDiscountStrip = round2p(summary.totalNetOfGoodsAndServicesSold - summary.totalDiscounts);
+  const grossProfitStrip = round2p(summary.totalGrossSales);
 
   const bodyRows =
     depositRows.length === 0
-      ? '<tr><td colspan="12" class="muted center">No sales in this date range.</td></tr>'
+      ? '<tr><td colspan="14" class="muted center">No sales in this date range.</td></tr>'
       : depositRows
           .map((r) => {
             const discClass = r.discount > 0 ? 'neg' : '';
@@ -99,6 +104,8 @@ function printSalesSummary(
           <td class="num tax">${moneyPhp(r.taxWithheld)}</td>
           <td class="num ${discClass}">${moneyPhp(r.discount)}</td>
           <td class="num strong">${moneyPhp(r.totalAmount)}</td>
+          <td class="num">${moneyPhp(r.costAtSale)}</td>
+          <td class="num strong">${moneyPhp(r.lineGrossProfit)}</td>
           <td class="nowrap sm">${escHtml(r.dateDepositedLabel)}</td>
           <td class="num">${moneyPhp(r.cashCardDeposited)}</td>
           <td class="num">${moneyPhp(r.checkDeposited)}</td>
@@ -174,11 +181,13 @@ function printSalesSummary(
         <th style="width:9%">Sales — services</th>
         <th style="width:7%">Tax withheld</th>
         <th style="width:7%">Discount</th>
-        <th style="width:9%">Total amount</th>
-        <th style="width:10%">Date deposited</th>
-        <th style="width:9%">Cash — card deposited</th>
-        <th style="width:8%">Check deposited</th>
-        <th style="width:6%">Variance</th>
+        <th style="width:8%">Total amount</th>
+        <th style="width:8%">Cost at sale</th>
+        <th style="width:8%">Gross profit</th>
+        <th style="width:9%">Date deposited</th>
+        <th style="width:8%">Cash — card deposited</th>
+        <th style="width:7%">Check deposited</th>
+        <th style="width:5%">Variance</th>
       </tr>
     </thead>
     <tbody>${bodyRows}</tbody>
@@ -191,6 +200,9 @@ function printSalesSummary(
         <tr><td>SALES — MATERIALS</td><td class="num">${moneyPhp(sumMat)}</td></tr>
         <tr><td>SALES — SERVICES</td><td class="num">${moneyPhp(sumSvc)}</td></tr>
         <tr><td>TOTAL SALES</td><td class="num">${moneyPhp(totalSalesGross)}</td></tr>
+        <tr><td>COST OF GOODS AND SERVICES SOLD</td><td class="num">${moneyPhp(summary.costOfGoodsAndServices)}</td></tr>
+        <tr><td>DISCOUNT</td><td class="num">${moneyPhp(summary.totalDiscounts)}</td></tr>
+        <tr><td>GROSS PROFIT</td><td class="num">${moneyPhp(grossProfitStrip)}</td></tr>
       </table>
     </div>
     <div>
@@ -207,7 +219,9 @@ function printSalesSummary(
     <div class="row taxrow"><span>TAX WITHHELD</span><span class="v">${moneyPhp(0)}</span></div>
     <div class="row"><span>TOTAL AMOUNT</span><span class="v">${moneyPhp(summary.totalNetOfGoodsAndServicesSold)}</span></div>
     <div class="row disc"><span>DISCOUNT</span><span class="v">${moneyPhp(summary.totalDiscounts)}</span></div>
+    <div class="row"><span>COST OF GOODS AND SERVICES SOLD</span><span class="v">${moneyPhp(summary.costOfGoodsAndServices)}</span></div>
     <div class="row total"><span>NET SALES (after discount)</span><span class="v">${moneyPhp(netAfterDiscountStrip)}</span></div>
+    <div class="row total"><span>GROSS PROFIT (after cost &amp; discount)</span><span class="v">${moneyPhp(grossProfitStrip)}</span></div>
   </div>
 
   <p class="prep"><strong>DATE PREPARED:</strong> ${escHtml(datePrepared)}</p>
@@ -396,8 +410,8 @@ export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({
 
   const depositReportRows = useMemo(() => {
     if (invalidRange) return [];
-    return buildSalesDepositReportRows(transactions, rangeStart, rangeEnd);
-  }, [transactions, invalidRange, rangeStart, rangeEnd]);
+    return buildSalesDepositReportRows(transactions, items, rangeStart, rangeEnd);
+  }, [transactions, items, invalidRange, rangeStart, rangeEnd]);
 
   const salesRegisterRows = useMemo(() => {
     if (invalidRange) return [];
@@ -729,13 +743,13 @@ export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({
             <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-1">Sales deposit report (print preview)</h3>
             <p className="text-xs text-slate-500 mb-4">
               Same columns as the printable Motor World–style sheet: customer name, sale reference (receipt no. or TX-id), materials vs
-              services split, deposits, and variance. Use <strong>Print deposit report</strong> above for landscape output.
+              services split, cost at sale, gross profit, deposits, and variance. Use <strong>Print deposit report</strong> above for landscape output.
             </p>
             <div className="overflow-x-auto border border-slate-900 rounded-sm">
               {depositReportRows.length === 0 ? (
                 <p className="p-6 text-sm text-slate-500">No sales in this range.</p>
               ) : (
-                <table className="w-full text-xs min-w-[960px] border-collapse">
+                <table className="w-full text-xs min-w-[1100px] border-collapse">
                   <thead>
                     <tr className="bg-slate-200">
                       <th className="border border-slate-900 px-2 py-2 text-left font-bold">Date</th>
@@ -746,6 +760,8 @@ export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({
                       <th className="border border-slate-900 px-2 py-2 text-right font-bold text-blue-800">Tax</th>
                       <th className="border border-slate-900 px-2 py-2 text-right font-bold text-red-800">Discount</th>
                       <th className="border border-slate-900 px-2 py-2 text-right font-bold">Total</th>
+                      <th className="border border-slate-900 px-2 py-2 text-right font-bold">Cost at sale</th>
+                      <th className="border border-slate-900 px-2 py-2 text-right font-bold">Gross profit</th>
                       <th className="border border-slate-900 px-2 py-2 text-left font-bold">Deposited</th>
                       <th className="border border-slate-900 px-2 py-2 text-right font-bold">Cash/card</th>
                       <th className="border border-slate-900 px-2 py-2 text-right font-bold">Check</th>
@@ -767,6 +783,8 @@ export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({
                           {r.discount > 0 ? money(r.discount) : money(0)}
                         </td>
                         <td className="border border-slate-900 px-2 py-1.5 text-right font-semibold tabular-nums">{money(r.totalAmount)}</td>
+                        <td className="border border-slate-900 px-2 py-1.5 text-right tabular-nums">{money(r.costAtSale)}</td>
+                        <td className="border border-slate-900 px-2 py-1.5 text-right font-semibold tabular-nums">{money(r.lineGrossProfit)}</td>
                         <td className="border border-slate-900 px-2 py-1.5 text-[11px]">{r.dateDepositedLabel}</td>
                         <td className="border border-slate-900 px-2 py-1.5 text-right tabular-nums">{money(r.cashCardDeposited)}</td>
                         <td className="border border-slate-900 px-2 py-1.5 text-right tabular-nums">{money(r.checkDeposited)}</td>
