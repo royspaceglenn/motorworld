@@ -46,6 +46,7 @@ interface AddItemModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (item: Partial<InventoryItem>) => void | Promise<void>;
+  onDelete?: (item: InventoryItem) => void | Promise<void>;
   editItem?: InventoryItem;
   existingItems: InventoryItem[];
 }
@@ -107,7 +108,7 @@ const AutocompleteInput = ({ label, value, onChange, options, placeholder, requi
     );
 };
 
-export const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose, onSave, editItem, existingItems }) => {
+export const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose, onSave, onDelete, editItem, existingItems }) => {
   const [formData, setFormData] = useState<Partial<InventoryItem>>({
     itemCode: '',
     name: '',
@@ -124,6 +125,7 @@ export const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose, onS
   });
   const [generating, setGenerating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** Text inputs avoid browser number quirks (e.g. leading 0 before digits). */
   const [qtyInput, setQtyInput] = useState('');
@@ -135,6 +137,7 @@ export const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose, onS
   useEffect(() => {
     setError(null);
     setSubmitting(false);
+    setDeleting(false);
     if (editItem) {
       setFormData(editItem);
       setQtyInput(String(editItem.quantity ?? 0));
@@ -169,8 +172,16 @@ export const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose, onS
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!String(formData.itemCode ?? '').trim()) {
+    const normalizedCode = String(formData.itemCode ?? '').trim().toUpperCase();
+    if (!normalizedCode) {
       setError('Item code is required.');
+      return;
+    }
+    const duplicateCode = existingItems.find(
+      (i) => i.itemCode?.trim().toUpperCase() === normalizedCode && i.id !== editItem?.id
+    );
+    if (duplicateCode) {
+      setError(`Item code "${normalizedCode}" is already used by ${duplicateCode.name}.`);
       return;
     }
     setSubmitting(true);
@@ -506,19 +517,46 @@ export const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose, onS
                 </div>
             </div>
 
+            {editItem && onDelete && (
+              <div className="mt-4 border-t border-slate-100 pt-4">
+                <button
+                  type="button"
+                  disabled={submitting || deleting}
+                  className="text-sm font-medium text-red-600 hover:text-red-700 disabled:opacity-50"
+                  onClick={async () => {
+                    const label = editItem.itemCode?.trim() || editItem.name;
+                    if (!window.confirm(`Delete "${label}" from inventory? This cannot be undone.`)) return;
+                    setDeleting(true);
+                    setError(null);
+                    try {
+                      await Promise.resolve(onDelete(editItem));
+                      onClose();
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : 'Failed to delete item.');
+                    } finally {
+                      setDeleting(false);
+                    }
+                  }}
+                >
+                  {deleting ? 'Deleting…' : 'Delete this item'}
+                </button>
+              </div>
+            )}
+
             <div className="flex gap-3 mt-6">
                 <Button
                 type="button"
                 variant="secondary"
                 fullWidth
                 onClick={onClose}
+                disabled={submitting || deleting}
                 >
                 Cancel
                 </Button>
                 <Button
                 type="submit"
                 fullWidth
-                disabled={submitting}
+                disabled={submitting || deleting}
                 >
                 {submitting ? 'Saving...' : editItem ? 'Save Changes' : 'Add Item'}
                 </Button>

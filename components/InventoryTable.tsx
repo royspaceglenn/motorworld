@@ -70,7 +70,11 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({ items, onEdit, o
                   Added on
                 </span>
               </th>
-              {canEdit && <th className="px-4 py-4 text-center text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Actions</th>}
+              {canEdit && (
+                <th className="sticky right-0 z-20 bg-slate-50/95 px-3 py-4 text-center text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 shadow-[-6px_0_12px_-8px_rgba(15,23,42,0.25)]">
+                  Actions
+                </th>
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -85,7 +89,7 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({ items, onEdit, o
                 const isLowStock = isLowStockItem(item);
                 const alertLabel = formatLowStockAlertThreshold(item.minStockLevel);
                 return (
-                  <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                  <tr key={item.id} className="group hover:bg-slate-50 transition-colors">
                     <td className="py-4 px-4 font-mono text-sm font-medium text-slate-700 whitespace-nowrap">
                       {item.itemCode?.trim() || '—'}
                     </td>
@@ -96,7 +100,18 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({ items, onEdit, o
                     </td>
                     <td className="py-4 px-4">
                       <div className="flex items-center gap-2">
-                        <div className="font-medium text-slate-800">{item.name}</div>
+                        {canEdit ? (
+                          <button
+                            type="button"
+                            onClick={() => onEdit(item)}
+                            className="font-medium text-slate-800 text-left hover:text-indigo-700 hover:underline underline-offset-2"
+                            title="Edit item"
+                          >
+                            {item.name}
+                          </button>
+                        ) : (
+                          <div className="font-medium text-slate-800">{item.name}</div>
+                        )}
                         {isLowStock && (
                           <div className="group relative shrink-0">
                             <AlertTriangle className="w-4 h-4 text-amber-500 cursor-help" />
@@ -165,54 +180,66 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({ items, onEdit, o
                       {formatItemAddedOn(item)}
                     </td>
                     {canEdit && (
-                      <td className="py-4 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1.5 flex-wrap">
-                          <button
-                            onClick={() => onAddStock(item)}
-                            className="rounded-xl bg-slate-100 p-2 text-slate-500 transition-colors hover:bg-green-50 hover:text-green-600"
-                            title="Restock / add stock"
-                          >
-                            <PackagePlus className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => onRelease(item)}
-                            className="rounded-xl bg-slate-100 p-2 text-slate-500 transition-colors hover:bg-orange-50 hover:text-orange-600"
-                            title="Release Stock"
-                          >
-                            <PackageMinus className="w-4 h-4" />
-                          </button>
-                          {onIssue && (
+                      <td className="sticky right-0 z-10 bg-white py-4 px-3 text-center shadow-[-6px_0_12px_-8px_rgba(15,23,42,0.18)] group-hover:bg-slate-50">
+                        <div className="flex min-w-[7.5rem] flex-col items-stretch gap-2">
+                          <div className="flex items-center justify-center gap-1">
                             <button
-                              onClick={() => onIssue(item)}
-                              className="rounded-xl bg-slate-100 p-2 text-slate-500 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
-                              title="Issue Item"
+                              type="button"
+                              onClick={() => onAddStock(item)}
+                              className="rounded-lg bg-slate-100 p-1.5 text-slate-500 transition-colors hover:bg-green-50 hover:text-green-600"
+                              title="Restock / add stock"
                             >
-                              <Send className="w-4 h-4" />
+                              <PackagePlus className="w-3.5 h-3.5" />
                             </button>
-                          )}
-                          {onReturn && (
                             <button
-                              onClick={() => onReturn(item)}
-                              className="rounded-xl bg-slate-100 p-2 text-slate-500 transition-colors hover:bg-teal-50 hover:text-teal-600"
-                              title="Return Item"
+                              type="button"
+                              onClick={() => onRelease(item)}
+                              className="rounded-lg bg-slate-100 p-1.5 text-slate-500 transition-colors hover:bg-orange-50 hover:text-orange-600"
+                              title="Release stock"
                             >
-                              <RotateCcw className="w-4 h-4" />
+                              <PackageMinus className="w-3.5 h-3.5" />
                             </button>
-                          )}
-                          <button
-                            onClick={() => onEdit(item)}
-                            className="rounded-xl bg-slate-100 p-2 text-slate-500 transition-colors hover:bg-blue-50 hover:text-blue-600"
-                            title="Edit Item"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => onDelete(item.id)}
-                            className="rounded-xl bg-slate-100 p-2 text-slate-500 transition-colors hover:bg-red-50 hover:text-red-600"
-                            title="Delete Item"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                            {onIssue && (
+                              <button
+                                type="button"
+                                onClick={() => onIssue(item)}
+                                className="rounded-lg bg-slate-100 p-1.5 text-slate-500 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                                title="Issue item"
+                              >
+                                <Send className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            {onReturn && (
+                              <button
+                                type="button"
+                                onClick={() => onReturn(item)}
+                                className="rounded-lg bg-slate-100 p-1.5 text-slate-500 transition-colors hover:bg-teal-50 hover:text-teal-600"
+                                title="Return item"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                          <div className="flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() => onEdit(item)}
+                              className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 transition-colors hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
+                              title="Edit item details"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onDelete(item.id)}
+                              className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-100"
+                              title="Delete item from inventory"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              Delete
+                            </button>
+                          </div>
                         </div>
                       </td>
                     )}

@@ -53,6 +53,7 @@ import { DocumentPrintPreviewModal } from './components/DocumentPrintPreviewModa
 import { subscribeDocumentPreview } from './lib/documentPreviewBus';
 import type { DocumentPreviewDoc } from './lib/documentPreviewBus';
 import { Button } from './components/ui/Button';
+import { InlineAlert } from './components/ui/InlineAlert';
 import {
   cx,
   DashboardNavButton,
@@ -151,6 +152,7 @@ const App: React.FC = () => {
   const [initialReleaseIdForReturn, setInitialReleaseIdForReturn] = useState<string | null>(null);
 
   const [itemToEdit, setItemToEdit] = useState<InventoryItem | undefined>(undefined);
+  const [inventoryFeedback, setInventoryFeedback] = useState<{ message: string; variant?: 'success' | 'error' } | null>(null);
   const [itemToRelease, setItemToRelease] = useState<InventoryItem | null>(null);
   const [itemToIssue, setItemToIssue] = useState<InventoryItem | null>(null);
   const [itemToReturn, setItemToReturn] = useState<InventoryItem | null>(null);
@@ -449,12 +451,14 @@ const App: React.FC = () => {
           description: itemData.description ?? itemToEdit.description,
           minStockLevel: itemData.minStockLevel ?? itemToEdit.minStockLevel,
           receiptNumber: itemData.receiptNumber !== undefined ? itemData.receiptNumber : itemToEdit.receiptNumber,
+          stockPurpose: itemData.stockPurpose ?? itemToEdit.stockPurpose,
           lastUpdated: now,
         })
         .then((updated) => {
           setItems((prev) => prev.map((i) => (i.id === itemToEdit.id ? (norm(updated) as InventoryItem) : i)));
           // Server PUT already records ADJUSTMENT when quantity changes; refresh ledger to avoid duplicates.
           fetchItemsAndTransactions();
+          setInventoryFeedback({ message: `Updated ${updated.name}.`, variant: 'success' });
           setItemToEdit(undefined);
         })
         .catch((err) => {
@@ -500,12 +504,35 @@ const App: React.FC = () => {
     }
   };
 
+  const deleteInventoryItem = (item: InventoryItem) => {
+    const label = item.itemCode?.trim() || item.name;
+    if (!window.confirm(`Delete "${label}" from inventory? This cannot be undone.`)) {
+      return Promise.resolve();
+    }
+    return itemsApi
+      .delete(item.id)
+      .then(() => {
+        setItems((prev) => prev.filter((i) => i.id !== item.id));
+        if (itemToEdit?.id === item.id) {
+          setItemToEdit(undefined);
+          setIsAddModalOpen(false);
+        }
+        setInventoryFeedback({ message: `Deleted ${label}.`, variant: 'success' });
+      })
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : 'Could not delete item.';
+        setInventoryFeedback({ message, variant: 'error' });
+        throw new Error(message);
+      });
+  };
+
   const handleDeleteItem = (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this item?')) return;
-    itemsApi
-      .delete(id)
-      .then(() => setItems((prev) => prev.filter((i) => i.id !== id)))
-      .catch(() => {});
+    const item = items.find((i) => i.id === id);
+    if (!item) {
+      setInventoryFeedback({ message: 'Item not found.', variant: 'error' });
+      return;
+    }
+    void deleteInventoryItem(item);
   };
 
   const handleReleaseItem = (
@@ -1458,6 +1485,14 @@ const App: React.FC = () => {
         )}
         {view === 'inventory' && (
            <div className="animate-fade-in">
+             {inventoryFeedback && (
+               <div className="mb-4">
+                 <InlineAlert
+                   message={inventoryFeedback.message}
+                   variant={inventoryFeedback.variant === 'error' ? 'error' : 'success'}
+                 />
+               </div>
+             )}
              <DashboardSurface className="relative z-20 mb-6 p-4">
                <div className="flex flex-col items-center gap-4 md:flex-row">
                 <div className="relative flex-1 w-full">
@@ -1680,6 +1715,7 @@ const App: React.FC = () => {
         isOpen={isAddModalOpen} 
         onClose={() => { setIsAddModalOpen(false); setItemToEdit(undefined); }} 
         onSave={handleSaveItem}
+        onDelete={itemToEdit ? deleteInventoryItem : undefined}
         editItem={itemToEdit}
         existingItems={items}
       />
