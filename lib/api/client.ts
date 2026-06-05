@@ -593,7 +593,7 @@ export const documentArchivesApi = {
 
 export const loansApi = {
   list: (params: { status?: string; customerName?: string; limit?: number; offset?: number } = {}) =>
-    request<{ loans: LoanApi[] }>(
+    request<{ loans: LoanApi[]; total?: number }>(
       `/api/loans?${new URLSearchParams(
         Object.entries({
           status: params.status || '',
@@ -672,7 +672,7 @@ export const purchasesApi = {
 
 export const paymentJournalApi = {
   list: (params: { limit?: number; offset?: number } = {}) =>
-    request<{ entries: PaymentJournalEntry[] }>(
+    request<{ entries: PaymentJournalEntry[]; total?: number }>(
       `/api/payment-journal?${new URLSearchParams({
         limit: String(params.limit ?? 200),
         offset: String(params.offset ?? 0),

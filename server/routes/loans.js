@@ -7,16 +7,20 @@ import { notifyAdminsAboutAction } from '../services/notificationService.js';
 const router = express.Router();
 
 router.get('/', async (req, res) => {
-  const limit = req.query.limit ? Number(req.query.limit) : undefined;
-  const offset = req.query.offset ? Number(req.query.offset) : 0;
-  return res.json({
-    loans: await getLoans({
+  try {
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    const offset = req.query.offset ? Number(req.query.offset) : 0;
+    const loans = await getLoans({
       status: req.query.status ? String(req.query.status) : undefined,
       customerName: req.query.customerName ? String(req.query.customerName) : undefined,
       limit,
       offset,
-    }),
-  });
+    });
+    return res.json({ loans, total: loans.length });
+  } catch (error) {
+    const msg = error?.message || 'Failed to load receivable accounts.';
+    return res.status(500).json({ error: msg });
+  }
 });
 
 router.get('/by-transaction/:transactionId', async (req, res) => {

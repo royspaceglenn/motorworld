@@ -11,8 +11,9 @@ import { CreditCard, ChevronRight, X, Calendar, Wallet, AlertCircle, BookOpen } 
 import { Button } from './ui/Button';
 import { InlineAlert } from './ui/InlineAlert';
 import type { Transaction } from '../types';
-import { buildPaymentReceiptHtml } from './ReceiptPrint';
+import { buildPaymentReceiptHtml, buildReceiptHtml } from './ReceiptPrint';
 import { openDocumentPreview } from '../lib/documentPreviewBus';
+import { deriveReceivableLoansFromTransactions } from '../lib/receivablesFromTransactions';
 
 const STATUS_LABELS: Record<string, string> = {
   unpaid: 'Unpaid',
@@ -70,7 +71,7 @@ export const LoanManagementView: React.FC<LoanManagementViewProps> = ({
   /** When set, receivable modal shows payment journal rows for this customer (opened via customer name click). */
   const [journalHighlightCustomer, setJournalHighlightCustomer] = useState<string | null>(null);
   const [chequeBusyId, setChequeBusyId] = useState<string | null>(null);
-  const [chequeActionError, setChequeActionError] = useState<string | null>(null);
+  const [usingTransactionFallback, setUsingTransactionFallback] = useState(false);
 
   const chequeQueue = useMemo(() => {
     return transactions
@@ -91,7 +92,7 @@ export const LoanManagementView: React.FC<LoanManagementViewProps> = ({
       .list({ limit: 100 })
       .then((res) => {
         setJournalEntries(res.entries);
-        setJournalTotal(res.total);
+        setJournalTotal(res.total ?? res.entries.length);
       })
       .catch((err) => setJournalError(err instanceof Error ? err.message : 'Failed to load payment journal.'))
       .finally(() => setJournalLoading(false));
@@ -100,19 +101,33 @@ export const LoanManagementView: React.FC<LoanManagementViewProps> = ({
   const loadLoans = () => {
     setLoading(true);
     setLoadError(null);
+    setUsingTransactionFallback(false);
     loansApi
       .list({ status: statusFilter || undefined, customerName: customerFilter || undefined })
       .then((res) => {
         setLoans(res.loans);
-        setTotal(res.total);
+        setTotal(res.total ?? res.loans.length);
       })
-      .catch((err) => setLoadError(err instanceof Error ? err.message : 'Failed to load receivables.'))
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : 'Failed to load receivables.';
+        setLoadError(
+          `${msg} Showing receivable sales from transaction history until the API responds. Wake the API on Render or retry.`
+        );
+        const fallback = deriveReceivableLoansFromTransactions(
+          transactions,
+          customerFilter,
+          statusFilter
+        );
+        setLoans(fallback);
+        setTotal(fallback.length);
+        setUsingTransactionFallback(true);
+      })
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
     loadLoans();
-  }, [statusFilter, customerFilter]);
+  }, [statusFilter, customerFilter, transactions]);
 
   useEffect(() => {
     loadPaymentJournal();
@@ -349,7 +364,14 @@ export const LoanManagementView: React.FC<LoanManagementViewProps> = ({
             customer name for that customer’s payment journal.
           </p>
         </div>
-        {loadError && <InlineAlert message={loadError} className="mx-6 mt-6" />}
+        {loadError && (
+          <div className="mx-6 mt-6 space-y-2">
+            <InlineAlert variant={usingTransactionFallback ? 'info' : 'error'} message={loadError} />
+            <Button type="button" variant="secondary" onClick={loadLoans} disabled={loading}>
+              Retry API
+            </Button>
+          </div>
+        )}
         <div className="overflow-x-auto max-h-[500px]">
           {loading ? (
             <div className="p-8 text-center text-slate-500">Loading...</div>
@@ -601,7 +623,14 @@ export const LoanManagementView: React.FC<LoanManagementViewProps> = ({
           </div>
           <p className="text-sm text-slate-500">All payments (Purchase Order SOA + receivable installments), newest first</p>
         </div>
-        {journalError && <InlineAlert message={journalError} className="mx-6 mt-6" />}
+        {journalError && (
+          <div className="mx-6 mt-6 space-y-2">
+            <InlineAlert message={journalError} />
+            <Button type="button" variant="secondary" onClick={loadPaymentJournal} disabled={journalLoading}>
+              Retry journal
+            </Button>
+          </div>
+        )}
         <div className="overflow-x-auto max-h-[400px]">
           {journalLoading ? (
             <p className="p-6 text-slate-500 text-sm">Loading...</p>

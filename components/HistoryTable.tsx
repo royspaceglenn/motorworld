@@ -14,6 +14,7 @@ import {
 import { SOAModal } from './SOAModal';
 import { DashboardSurface } from './ui/DashboardPrimitives';
 import { openDocumentPreview } from '../lib/documentPreviewBus';
+import { buildReceiptHtml } from './ReceiptPrint';
 
 interface HistoryTableProps {
   transactions: Transaction[];
@@ -62,6 +63,14 @@ export const HistoryTable: React.FC<HistoryTableProps> = ({
     }
     return set;
   }, [transactions]);
+
+  const printPosReceipt = (transaction: Transaction) => {
+    openDocumentPreview({
+      html: buildReceiptHtml(transaction),
+      title: 'POS receipt (reprint)',
+      filename: `pos-receipt-${transaction.id.slice(0, 8)}.pdf`,
+    });
+  };
 
   const printTransaction = (transaction: Transaction) => {
     const safeRecipient = (transaction.recipient || 'NoRecipient').replace(/[^a-zA-Z0-9-_ ]/g, '').trim();
@@ -173,7 +182,10 @@ export const HistoryTable: React.FC<HistoryTableProps> = ({
   return (
     <DashboardSurface className="overflow-hidden">
       <div className="border-b border-slate-100 px-6 py-5">
-        <h3 className="font-bold text-slate-800">Transaction History</h3>
+        <h3 className="font-bold text-slate-800">Transaction history</h3>
+        <p className="mt-1 text-xs text-slate-500">
+          Search, review, and reprint POS receipts or release vouchers for any sale.
+        </p>
       </div>
       <div className="overflow-x-auto max-h-[500px]">
         <table className="w-full text-left border-collapse">
@@ -311,6 +323,16 @@ export const HistoryTable: React.FC<HistoryTableProps> = ({
                             title="Print billing statement (A4)"
                           >
                             <ScrollText className="w-4 h-4" />
+                          </button>
+                        )}
+                        {t.type === 'RELEASE' && (
+                          <button
+                            type="button"
+                            onClick={() => printPosReceipt(t)}
+                            className="rounded-xl bg-slate-100 p-1.5 text-slate-500 transition-colors hover:bg-orange-50 hover:text-orange-700"
+                            title="Reprint POS receipt"
+                          >
+                            <FileText className="w-4 h-4" />
                           </button>
                         )}
                         <button

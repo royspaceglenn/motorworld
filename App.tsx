@@ -29,6 +29,7 @@ import { InventoryImportModal } from './components/InventoryImportModal';
 import { ReleaseModal } from './components/ReleaseModal';
 import { IssueModal } from './components/IssueModal';
 import { formatLowStockAlertThreshold, isLowStockItem } from './lib/inventoryPricing';
+import { filterTransactionsForHistory } from './lib/transactionHistorySearch';
 import { dateInputToIsoTimestamp, todayDateInputValue } from './lib/transactionDate';
 import { ReturnModal } from './components/ReturnModal';
 import { ReturnFromSalesModal } from './components/ReturnFromSalesModal';
@@ -140,6 +141,7 @@ const App: React.FC = () => {
   const [historyStartDate, setHistoryStartDate] = useState('');
   const [historyEndDate, setHistoryEndDate] = useState('');
   const [historyTypeFilter, setHistoryTypeFilter] = useState<string>('All');
+  const [historySearchQuery, setHistorySearchQuery] = useState('');
 
   // Modals
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -355,27 +357,35 @@ const App: React.FC = () => {
 
   // --- Derived Data for History View ---
   const historyTransactions = useMemo(() => {
-    return transactions.filter(t => {
+    const filtered = transactions.filter((t) => {
       const tDate = new Date(t.timestamp);
-      tDate.setHours(0,0,0,0);
+      tDate.setHours(0, 0, 0, 0);
 
       const start = historyStartDate ? new Date(historyStartDate) : null;
-      if (start) start.setHours(0,0,0,0);
+      if (start) start.setHours(0, 0, 0, 0);
 
       const end = historyEndDate ? new Date(historyEndDate) : null;
-      if (end) end.setHours(23,59,59,999);
+      if (end) end.setHours(23, 59, 59, 999);
 
       if (start && tDate < start) return false;
       if (end && tDate > end) return false;
-      
+
       if (historyTypeFilter !== 'All') {
-        if (historyTypeFilter === 'RETURN' && (t.type === 'RETURN' || t.type === 'RETURN_FROM_SALES')) return true;
+        if (historyTypeFilter === 'RETURN' && (t.type === 'RETURN' || t.type === 'RETURN_FROM_SALES'))
+          return true;
         if (t.type !== historyTypeFilter) return false;
       }
 
       return true;
-    }).sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [transactions, historyStartDate, historyEndDate, historyTypeFilter]);
+    });
+
+    return filterTransactionsForHistory(
+      filtered.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()),
+      historySearchQuery,
+      persons,
+      vehicles
+    );
+  }, [transactions, historyStartDate, historyEndDate, historyTypeFilter, historySearchQuery, persons, vehicles]);
 
   // --- Derived Data for Dashboard (Global Stats) ---
   // Using 'items' and 'transactions' directly for global view, not filtered ones
@@ -950,8 +960,8 @@ const App: React.FC = () => {
       description: 'Handle releases, customer transactions, and service sales in one place.',
     },
     history: {
-      title: 'Transaction History',
-      description: 'Review item movement, dates, payment modes, and printable records.',
+      title: 'Transaction history',
+      description: 'Search sales and stock movements by customer, receipt, item, or ID. Reprint POS receipts.',
     },
     document_archives: {
       title: 'Document archive',
@@ -1005,7 +1015,7 @@ const App: React.FC = () => {
         { id: 'sales_summary', label: 'Sales summary', icon: FileSpreadsheet },
         { id: 'billing_statement', label: 'Billing statement', icon: FileText },
         { id: 'inventory', label: 'Inventory', icon: Package },
-        { id: 'history', label: 'History Log', icon: History },
+        { id: 'history', label: 'Transaction history', icon: History },
         { id: 'document_archives', label: 'Document archive', icon: Archive },
         { id: 'item_details', label: 'Item Details', icon: ClipboardList },
       ],
@@ -1709,12 +1719,32 @@ const App: React.FC = () => {
                             variant="ghost"
                             className="ml-2 whitespace-nowrap text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
                         >
-                            Clear
+                            Clear dates
                         </Button>
                     )}
                 </div>
 
-                <Button variant="secondary" onClick={printHistoryLog} className="whitespace-nowrap">
+                <div className="relative w-full xl:max-w-md">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="search"
+                    className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="Search customer, receipt, item, ID, plate…"
+                    value={historySearchQuery}
+                    onChange={(e) => setHistorySearchQuery(e.target.value)}
+                  />
+                  {historySearchQuery && (
+                    <button
+                      type="button"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 hover:text-slate-800"
+                      onClick={() => setHistorySearchQuery('')}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                <Button onClick={handlePrintHistory} variant="secondary" className="hidden xl:flex whitespace-nowrap">
                     <Printer className="w-4 h-4" />
                     Print Log
                 </Button>
