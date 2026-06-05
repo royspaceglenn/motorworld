@@ -734,9 +734,14 @@ export const bookingsApi = {
       confirmNote?: string;
     }
   ) =>
-    request<{ booking: OnlineBooking; transaction: Transaction }>(
+    request<{ booking: OnlineBooking; person?: Person; vehicle?: Vehicle | null }>(
       `/api/bookings/${encodeURIComponent(id)}/confirm`,
       { method: 'POST', body: JSON.stringify(payload) }
+    ),
+  completePos: (id: string, transactionId: string) =>
+    request<{ booking: OnlineBooking; transaction: Transaction }>(
+      `/api/bookings/${encodeURIComponent(id)}/complete-pos`,
+      { method: 'POST', body: JSON.stringify({ transactionId }) }
     ),
   cancel: (id: string, payload?: { reason?: string }) =>
     request<{ booking: OnlineBooking }>(`/api/bookings/${encodeURIComponent(id)}/cancel`, {

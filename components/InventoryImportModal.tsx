@@ -5,6 +5,7 @@ import {
   parseInventoryPriceListFile,
   type InventoryPriceListRow,
 } from '../lib/inventoryPriceListImport';
+import { mergeIdenticalPriceListRows } from '../lib/inventoryMergeKey';
 import { Button } from './ui/Button';
 import { InlineAlert } from './ui/InlineAlert';
 import { FileSpreadsheet, Loader2, Trash2, Pencil, CheckCircle2 } from 'lucide-react';
@@ -23,20 +24,10 @@ function rowKey(r: InventoryPriceListRow, index: number): string {
 
 function validateRows(rows: InventoryPriceListRow[]): string[] {
   const issues: string[] = [];
-  const codes = new Map<string, number>();
   rows.forEach((r, i) => {
     const label = r.sourceRow ? `Row ${r.sourceRow}` : `Line ${i + 1}`;
     if (!r.itemCode.trim()) issues.push(`${label}: item code is required.`);
     if (!r.productName.trim()) issues.push(`${label}: product name is required.`);
-    const code = r.itemCode.trim().toUpperCase();
-    if (code) {
-      const prev = codes.get(code);
-      if (prev != null) {
-        issues.push(`Duplicate item code “${code}” (rows ${prev} and ${r.sourceRow ?? i + 1}).`);
-      } else {
-        codes.set(code, r.sourceRow ?? i + 1);
-      }
-    }
   });
   return issues;
 }
@@ -139,8 +130,9 @@ export const InventoryImportModal: React.FC<InventoryImportModalProps> = ({
     setError(null);
     setResult(null);
     try {
+      const { rows: mergedRows, mergedCount } = mergeIdenticalPriceListRows(rows);
       const res = await itemsApi.importPriceList({
-        rows: rows.map((r) => ({
+        rows: mergedRows.map((r) => ({
           itemCode: r.itemCode.trim().toUpperCase(),
           productType: r.productType.trim(),
           productName: r.productName.trim(),
@@ -156,8 +148,12 @@ export const InventoryImportModal: React.FC<InventoryImportModalProps> = ({
       });
       onImported((res.items ?? []).map((i) => i as InventoryItem));
       const errNote = res.errors?.length ? ` ${res.errors.length} row(s) had errors.` : '';
+      const mergeNote =
+        mergedCount > 0 || (res as { mergedGroups?: number }).mergedGroups
+          ? ` Identical lines merged into one stock where all details matched.`
+          : '';
       setResult(
-        `Applied to inventory — ${res.created} new, ${res.updated} updated, ${res.skipped} skipped.${errNote}`
+        `Applied to inventory — ${res.created} new, ${res.updated} updated, ${res.skipped} skipped.${mergeNote}${errNote}`
       );
       if (res.errors?.length) setWarnings((w) => [...w, ...res.errors]);
       setStep('done');

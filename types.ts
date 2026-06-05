@@ -320,6 +320,8 @@ export interface OnlineBooking {
   quotedAmount?: number | null;
   modeOfPayment?: string | null;
   confirmNote?: string | null;
+  /** Suggested receivable terms when payment is Credit (from accept step). */
+  dueDays?: number | null;
 }
 
 // --- Purchasing (Supplier → Receive → Inventory) ---

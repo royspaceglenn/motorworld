@@ -8,7 +8,9 @@ import {
   isExcludedFromPosProductPicker,
 } from '../types';
 import { itemCapitalPerUnit, itemRetailPerUnit } from '../lib/inventoryPricing';
-import { personsApi, vehiclesApi, transactionsApi } from '../lib/api/adminData';
+import { personsApi, vehiclesApi, transactionsApi, bookingsApi } from '../lib/api/adminData';
+import type { PosBookingTransfer } from '../lib/posBookingTransfer';
+import { posPaymentFromBookingMode } from '../lib/posBookingTransfer';
 import { buildReceiptHtml } from './ReceiptPrint';
 import { openDocumentPreview } from '../lib/documentPreviewBus';
 import {
@@ -42,6 +44,8 @@ interface POSViewProps {
   vehicles: Vehicle[];
   canEdit: boolean;
   onSaleComplete?: () => void;
+  bookingTransfer?: PosBookingTransfer | null;
+  onBookingTransferCleared?: () => void;
 }
 
 type DraftItemType = 'Product' | 'Service';
@@ -87,6 +91,8 @@ export const POSView: React.FC<POSViewProps> = ({
   vehicles,
   canEdit,
   onSaleComplete,
+  bookingTransfer,
+  onBookingTransferCleared,
 }) => {
   const [customerInput, setCustomerInput] = useState('');
   const [selectedPersonId, setSelectedPersonId] = useState('');
@@ -174,6 +180,51 @@ export const POSView: React.FC<POSViewProps> = ({
     setBhCustomerAddress(loadPrePrintedCustomerAddress());
     setOverlayCalibration(loadOverlayCalibration());
   }, []);
+
+  useEffect(() => {
+    if (!bookingTransfer) return;
+    const transfer = bookingTransfer;
+    setCustomerInput(transfer.fullName);
+    if (transfer.personId) setSelectedPersonId(transfer.personId);
+    if (transfer.vehicleId) {
+      setSelectedVehicleId(transfer.vehicleId);
+      const vehicle = vehicles.find((v) => v.id === transfer.vehicleId);
+      if (vehicle) setVehicleInput(vehicle.plateNumber);
+    } else {
+      setSelectedVehicleId('');
+      setVehicleInput('');
+    }
+    const price = Math.max(0, Number(transfer.quotedAmount ?? 0));
+    setCart([
+      {
+        id: crypto.randomUUID(),
+        itemType: 'Service',
+        itemId: null,
+        name: transfer.serviceLabel,
+        qty: 1,
+        unitPrice: price,
+        discountPerUnit: 0,
+      },
+    ]);
+    setDraftItemType('Service');
+    setServiceName('');
+    setDraftQty(1);
+    setDraftPrice(price);
+    setPaymentType(posPaymentFromBookingMode(transfer.modeOfPayment));
+    if (transfer.dueDays != null && transfer.dueDays > 0) {
+      setDueDays(transfer.dueDays);
+    }
+    const noteParts = [
+      `Online booking #${transfer.bookingId.slice(0, 8)}`,
+      transfer.bookingNotes?.trim(),
+      transfer.confirmNote?.trim(),
+    ].filter(Boolean);
+    setNote(noteParts.join(' · '));
+    if (transfer.preferredDate && /^\d{4}-\d{2}-\d{2}/.test(transfer.preferredDate)) {
+      setTransactionDate(transfer.preferredDate.slice(0, 10));
+    }
+    setError(null);
+  }, [bookingTransfer, vehicles]);
 
   const subtotal = useMemo(() => round2(cart.reduce((s, l) => s + lineGross(l), 0)), [cart]);
 
@@ -504,10 +555,24 @@ export const POSView: React.FC<POSViewProps> = ({
         }
         return transactionsApi.create(payload).then((tx) => ({ tx, personId, recipientName }));
       })
-      .then((result) => {
+      .then(async (result) => {
         if (!result) return;
         const { tx } = result;
         const transaction = tx as Transaction;
+        if (bookingTransfer?.bookingId) {
+          try {
+            await bookingsApi.completePos(bookingTransfer.bookingId, transaction.id);
+          } catch (linkErr) {
+            setError(
+              linkErr instanceof Error
+                ? linkErr.message
+                : 'Sale posted but could not link to the online booking.'
+            );
+            setSubmitting(false);
+            return;
+          }
+          onBookingTransferCleared?.();
+        }
         onSaleComplete?.();
         saveBillingLetterhead(billingLetterhead);
         savePrePrintedInvoiceNumber(bhInvoiceNumber);
@@ -674,7 +739,25 @@ export const POSView: React.FC<POSViewProps> = ({
   };
 
   return (
-    <div className="animate-fade-in max-w-6xl mx-auto">
+    <div className="animate-fade-in max-w-6xl mx-auto space-y-4">
+      {bookingTransfer && (
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-950">
+          <p className="font-semibold">Online booking checkout</p>
+          <p className="mt-0.5 text-indigo-800">
+            {bookingTransfer.fullName} — {bookingTransfer.serviceLabel}. Review items, payment, and billing, then complete
+            the sale to finish this booking.
+          </p>
+          {onBookingTransferCleared && (
+            <button
+              type="button"
+              className="mt-2 text-xs font-semibold text-indigo-700 underline underline-offset-2 hover:text-indigo-900"
+              onClick={onBookingTransferCleared}
+            >
+              Clear booking prefill
+            </button>
+          )}
+        </div>
+      )}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] items-start">
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="p-6 border-b border-slate-100 bg-indigo-50">

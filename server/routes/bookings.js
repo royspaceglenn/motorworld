@@ -2,6 +2,7 @@ import express from 'express';
 import { requireAdmin } from '../middleware/rbac.js';
 import {
   cancelOnlineBooking,
+  completeOnlineBookingPosTransfer,
   confirmOnlineBooking,
   getOnlineBookingById,
   getOnlineBookings,
@@ -40,20 +41,46 @@ router.post('/:id/confirm', requireAdmin, async (req, res) => {
     });
     await logActivity(req.user.id, 'CONFIRM_ONLINE_BOOKING', {
       bookingId: id,
-      transactionId: result.transaction.id,
       customerName: result.booking.fullName,
       serviceLabel: result.booking.serviceLabel,
     });
     await notifyAdminsAboutAction(
       req.user,
       'CONFIRM_ONLINE_BOOKING',
-      `confirmed online booking for ${result.booking.fullName} (${result.booking.serviceLabel})`
+      `accepted online booking for ${result.booking.fullName} (${result.booking.serviceLabel})`
     );
     scheduleViewerSync();
     return res.json(result);
   } catch (e) {
     const msg = e?.message || 'Failed to confirm booking.';
     const status = msg.includes('not found') ? 404 : msg.includes('Only pending') ? 400 : 500;
+    return res.status(status).json({ error: msg });
+  }
+});
+
+router.post('/:id/complete-pos', requireAdmin, async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    const transactionId = String(req.body?.transactionId || '').trim();
+    const result = await completeOnlineBookingPosTransfer(id, transactionId, {
+      completedBy: req.user.displayName,
+    });
+    await logActivity(req.user.id, 'COMPLETE_ONLINE_BOOKING_POS', {
+      bookingId: id,
+      transactionId: result.transaction.id,
+      customerName: result.booking.fullName,
+    });
+    await notifyAdminsAboutAction(
+      req.user,
+      'COMPLETE_ONLINE_BOOKING_POS',
+      `completed POS sale for online booking ${result.booking.fullName}`
+    );
+    scheduleViewerSync();
+    return res.json(result);
+  } catch (e) {
+    const msg = e?.message || 'Failed to link POS sale to booking.';
+    const status =
+      msg.includes('not found') ? 404 : msg.includes('Only confirmed') || msg.includes('already linked') ? 400 : 500;
     return res.status(status).json({ error: msg });
   }
 });

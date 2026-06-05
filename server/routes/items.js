@@ -24,27 +24,36 @@ router.post('/', requireAdmin, async (req, res) => {
   if (!name) return res.status(400).json({ error: 'Item name is required.' });
 
   const created = await createItem(req.body);
-  if (created.quantity > 0) {
+  const merged = Boolean(created.wasMerged);
+  const quantityChange = merged
+    ? Math.max(0, Number(created.quantityAdded ?? 0))
+    : Math.max(0, Number(created.quantity ?? 0));
+  if (quantityChange > 0) {
     const cap = Number(created.capitalPrice ?? created.unitPrice);
     await addTransaction({
       id: crypto.randomUUID(),
       itemId: created.id,
       itemName: created.name,
       type: 'ADDITION',
-      quantityChange: created.quantity,
+      quantityChange,
       unitPriceAtTime: cap,
       sellingPriceAtTime: Number(created.unitPrice),
-      totalValue: created.quantity * cap,
+      totalValue: quantityChange * cap,
       timestamp: created.createdAt ?? created.lastUpdated,
-      note: 'Initial Stock',
+      note: merged ? 'Merged into matching stock line' : 'Initial Stock',
       receiptNumber: created.receiptNumber,
       itemType: 'Product',
     });
   }
-  await logActivity(req.user.id, 'ADD_ITEM', { itemId: created.id, itemName: created.name });
-  await notifyAdminsAboutAction(req.user, 'ADD_ITEM', `added item: ${created.name}`);
+  await logActivity(req.user.id, 'ADD_ITEM', { itemId: created.id, itemName: created.name, merged });
+  await notifyAdminsAboutAction(
+    req.user,
+    'ADD_ITEM',
+    merged ? `added stock to existing item: ${created.name}` : `added item: ${created.name}`
+  );
   scheduleViewerSync();
-  return res.status(201).json(created);
+  const { wasMerged: _w, quantityAdded: _q, ...payload } = created;
+  return res.status(merged ? 200 : 201).json(payload);
 });
 
 router.put('/:id', requireAdmin, async (req, res) => {

@@ -1,4 +1,4 @@
-import type { Expense, InventoryItem, Transaction } from '../types';
+import type { Expense, InventoryItem, Person, Transaction, Vehicle } from '../types';
 import { itemCapitalPerUnit } from './inventoryPricing';
 
 function round2(n: number) {
@@ -358,4 +358,211 @@ export function buildSalesDepositReportRows(transactions: Transaction[], start: 
         variance,
       };
     });
+}
+
+/** Semi-month bucket label used on Motor World SR-1 sales register (e.g. JANUARY 1-15, 2026). */
+export function semiMonthCoveredLabel(d: Date): string {
+  const month = d.toLocaleString('en-US', { month: 'long' }).toUpperCase();
+  const year = d.getFullYear();
+  const day = d.getDate();
+  if (day <= 15) return `${month} 1-15, ${year}`;
+  const lastDay = new Date(year, d.getMonth() + 1, 0).getDate();
+  return `${month} 16-${lastDay}, ${year}`;
+}
+
+function sr1TransactionTypeLabel(t: Transaction): string {
+  const mode = String(t.modeOfPayment || 'Cash').trim();
+  if (mode === 'Credit') return 'A/R';
+  if (mode === 'Purchase Order') return 'P.O.';
+  if (mode === 'Cheque') return 'CHEQUE';
+  return 'CASH';
+}
+
+function sr1InvoiceLabel(t: Transaction): string {
+  const inv = String(t.invoiceNumber || t.receiptNumber || '').trim();
+  const type = sr1TransactionTypeLabel(t);
+  return inv ? `${inv} (${type})` : type;
+}
+
+function padCrNo(n: number): string {
+  return String(n).padStart(3, '0');
+}
+
+function vehicleCarModel(vehicle: Vehicle | undefined): string {
+  if (!vehicle) return '—';
+  const brand = String(vehicle.brand || '').trim();
+  const model = String(vehicle.model || '').trim();
+  if (brand && model) return `${brand}/${model}`;
+  return brand || model || '—';
+}
+
+/** One line on the SR-1 sales register (matches Motor World SR-1.pdf column layout). */
+export interface SalesRegisterLineRow {
+  transactionId: string;
+  saleDate: string;
+  dateCovered: string;
+  crNo: string;
+  bsNo: string;
+  poNo: string;
+  invoiceLabel: string;
+  transactionType: string;
+  customerName: string;
+  address: string;
+  carModel: string;
+  plateNo: string;
+  terms: string;
+  supplierName: string;
+  itemCode: string;
+  description: string;
+  qty: number;
+  uom: string;
+  costPerUnit: number;
+  totalCost: number;
+  unitPrice: number;
+  totalPrice: number;
+  transactionTotal: number;
+  discountPeso: number;
+  discountPercent: number;
+}
+
+export function buildSalesRegisterLines(
+  transactions: Transaction[],
+  items: InventoryItem[],
+  persons: Person[],
+  vehicles: Vehicle[],
+  start: Date,
+  end: Date
+): SalesRegisterLineRow[] {
+  const startMs = start.getTime();
+  const endMs = end.getTime();
+  const inRange = (t: Transaction) => {
+    const ts = new Date(t.timestamp).getTime();
+    return ts >= startMs && ts <= endMs;
+  };
+  const releases = transactions
+    .filter((t) => t.type === 'RELEASE' && inRange(t))
+    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+  const personById = new Map(persons.map((p) => [p.id, p]));
+  const vehicleById = new Map(vehicles.map((v) => [v.id, v]));
+  const itemById = new Map(items.map((i) => [i.id, i]));
+
+  const rows: SalesRegisterLineRow[] = [];
+
+  releases.forEach((t, crIndex) => {
+    const saleDateObj = new Date(t.timestamp);
+    const saleDate = saleDateObj.toLocaleDateString(undefined, {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+    const dateCovered = semiMonthCoveredLabel(saleDateObj);
+    const crNo = padCrNo(crIndex + 1);
+    const bsNo = String(t.receiptNumber || saleReferenceForReport(t)).trim() || '—';
+    const poNo =
+      String(t.modeOfPayment || '').trim() === 'Purchase Order' && t.invoiceNumber
+        ? String(t.invoiceNumber).trim()
+        : '—';
+    const invoiceLabel = sr1InvoiceLabel(t);
+    const transactionType = sr1TransactionTypeLabel(t);
+    const person = t.personId ? personById.get(t.personId) : undefined;
+    const vehicle = t.vehicleId ? vehicleById.get(t.vehicleId) : undefined;
+    const customerName = String(t.recipient || person?.fullName || '—').trim() || '—';
+    const address = String(person?.address || '—').trim() || '—';
+    const carModel = vehicleCarModel(vehicle);
+    const plateNo = String(vehicle?.plateNumber || '—').trim() || '—';
+    const terms = String(t.terms || '—').trim() || '—';
+    const transactionTotal = round2(Number(t.totalValue || 0));
+
+    const pushLine = (line: {
+      supplierName: string;
+      itemCode: string;
+      description: string;
+      qty: number;
+      uom: string;
+      costPerUnit: number;
+      unitPrice: number;
+      lineSubtotal: number;
+      discountPeso: number;
+    }) => {
+      const totalCost = round2(line.qty * line.costPerUnit);
+      const totalPrice = round2(line.lineSubtotal);
+      const discountPercent =
+        totalPrice > 0 && line.discountPeso > 0 ? round2((line.discountPeso / totalPrice) * 100) : 0;
+      rows.push({
+        transactionId: t.id,
+        saleDate,
+        dateCovered,
+        crNo,
+        bsNo,
+        poNo,
+        invoiceLabel,
+        transactionType,
+        customerName,
+        address,
+        carModel,
+        plateNo,
+        terms,
+        supplierName: line.supplierName,
+        itemCode: line.itemCode,
+        description: line.description,
+        qty: line.qty,
+        uom: line.uom,
+        costPerUnit: round2(line.costPerUnit),
+        totalCost,
+        unitPrice: round2(line.unitPrice),
+        totalPrice,
+        transactionTotal,
+        discountPeso: round2(line.discountPeso),
+        discountPercent,
+      });
+    };
+
+    if (t.posLineItems && t.posLineItems.length > 0) {
+      for (const li of t.posLineItems) {
+        const inv = li.itemId ? itemById.get(li.itemId) : undefined;
+        const qty = Math.abs(Number(li.quantity) || 0);
+        const unitPrice = Number(li.unitPrice) || 0;
+        const lineSubtotal = round2(Number(li.lineSubtotal ?? qty * unitPrice));
+        let costPerUnit = li.costPerUnit != null && Number.isFinite(Number(li.costPerUnit)) ? Number(li.costPerUnit) : NaN;
+        if (!Number.isFinite(costPerUnit) && inv) costPerUnit = itemCapitalPerUnit(inv);
+        if (!Number.isFinite(costPerUnit)) costPerUnit = 0;
+        const dpu = Number(li.discountPerUnit ?? 0);
+        const discountPeso = dpu > 0 ? round2(dpu * qty) : 0;
+        pushLine({
+          supplierName: String(inv?.brand || '—').trim() || '—',
+          itemCode: String(inv?.itemCode || '—').trim() || '—',
+          description: String(li.itemName || '—').trim() || '—',
+          qty,
+          uom: li.itemType === 'Service' ? 'lot' : String(inv?.unit || 'PC/S').trim() || 'PC/S',
+          costPerUnit,
+          unitPrice,
+          lineSubtotal,
+          discountPeso,
+        });
+      }
+      return;
+    }
+
+    const inv = t.itemId ? itemById.get(t.itemId) : undefined;
+    const qty = Math.abs(Number(t.quantityChange) || 0) || 1;
+    const gross = releaseGrossSellingAmount(t);
+    const discountPeso = releaseDiscountAmount(t);
+    const unitPrice = qty > 0 ? round2(gross / qty) : round2(Number(t.unitPriceAtTime) || 0);
+    let costPerUnit = inv ? itemCapitalPerUnit(inv) : 0;
+    if (t.itemType === 'Service') costPerUnit = 0;
+    pushLine({
+      supplierName: String(inv?.brand || '—').trim() || '—',
+      itemCode: String(inv?.itemCode || '—').trim() || '—',
+      description: String(t.itemName || '—').trim() || '—',
+      qty,
+      uom: t.itemType === 'Service' ? 'lot' : String(inv?.unit || 'PC/S').trim() || 'PC/S',
+      costPerUnit,
+      unitPrice,
+      lineSubtotal: gross,
+      discountPeso,
+    });
+  });
+
+  return rows;
 }

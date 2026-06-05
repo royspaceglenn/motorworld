@@ -1,15 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { OnlineBooking } from '../types';
 import { bookingsApi } from '../lib/api/adminData';
+import { posTransferFromOnlineBooking } from '../lib/posBookingTransfer';
+import type { PosBookingTransfer } from '../lib/posBookingTransfer';
 import { DashboardSurface } from './ui/DashboardPrimitives';
 import { Button } from './ui/Button';
 import { InlineAlert } from './ui/InlineAlert';
-import { CalendarClock, CheckCircle2, Loader2, Phone, Mail, Car, XCircle } from 'lucide-react';
+import { CalendarClock, CheckCircle2, Loader2, Phone, Mail, Car, ShoppingBag, XCircle, RefreshCw } from 'lucide-react';
 
 interface OnlineBookingsViewProps {
   canEdit: boolean;
   isMotorWorldShop: boolean;
   onBookingConfirmed?: () => void;
+  onTransferToPos?: (transfer: PosBookingTransfer) => void;
 }
 
 const STATUS_TABS: Array<{ id: 'all' | OnlineBooking['status']; label: string }> = [
@@ -19,16 +22,24 @@ const STATUS_TABS: Array<{ id: 'all' | OnlineBooking['status']; label: string }>
   { id: 'cancelled', label: 'Cancelled' },
 ];
 
-function statusBadge(status: OnlineBooking['status']) {
+function statusBadge(status: OnlineBooking['status'], hasSale: boolean) {
+  if (status === 'confirmed' && hasSale) return 'bg-indigo-100 text-indigo-800';
   if (status === 'confirmed') return 'bg-emerald-100 text-emerald-800';
   if (status === 'cancelled') return 'bg-slate-200 text-slate-600';
   return 'bg-amber-100 text-amber-900';
+}
+
+function statusLabel(status: OnlineBooking['status'], hasSale: boolean) {
+  if (status === 'confirmed' && hasSale) return 'Completed';
+  if (status === 'confirmed') return 'Confirmed';
+  return status;
 }
 
 export const OnlineBookingsView: React.FC<OnlineBookingsViewProps> = ({
   canEdit,
   isMotorWorldShop,
   onBookingConfirmed,
+  onTransferToPos,
 }) => {
   const [bookings, setBookings] = useState<OnlineBooking[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,12 +71,22 @@ export const OnlineBookingsView: React.FC<OnlineBookingsViewProps> = ({
     load();
   }, [load]);
 
+  useEffect(() => {
+    if (!isMotorWorldShop) return;
+    const timer = window.setInterval(load, 45_000);
+    return () => window.clearInterval(timer);
+  }, [isMotorWorldShop, load]);
+
   const filtered = useMemo(() => {
     if (statusTab === 'all') return bookings;
     return bookings.filter((b) => b.status === statusTab);
   }, [bookings, statusTab]);
 
   const pendingCount = useMemo(() => bookings.filter((b) => b.status === 'pending').length, [bookings]);
+  const awaitingPosCount = useMemo(
+    () => bookings.filter((b) => b.status === 'confirmed' && !b.transactionId).length,
+    [bookings]
+  );
 
   const openConfirm = (b: OnlineBooking) => {
     setConfirmTarget(b);
@@ -90,7 +111,7 @@ export const OnlineBookingsView: React.FC<OnlineBookingsViewProps> = ({
       load();
       onBookingConfirmed?.();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Confirm failed.');
+      setError(e instanceof Error ? e.message : 'Could not accept booking.');
     } finally {
       setBusy(false);
     }
@@ -108,6 +129,11 @@ export const OnlineBookingsView: React.FC<OnlineBookingsViewProps> = ({
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleTransferToPos = (b: OnlineBooking) => {
+    if (!onTransferToPos) return;
+    onTransferToPos(posTransferFromOnlineBooking(b));
   };
 
   if (!isMotorWorldShop) {
@@ -129,14 +155,26 @@ export const OnlineBookingsView: React.FC<OnlineBookingsViewProps> = ({
         <div>
           <h2 className="text-xl font-bold text-slate-800">Online bookings</h2>
           <p className="text-sm text-slate-500">
-            Requests from the public website. Confirm to create the customer, service sale, and history entry.
+            Website requests appear here as <strong>Pending</strong>. Accept the booking, then use{' '}
+            <strong>Transfer to POS</strong> to finish the sale with payment, billing, and inventory.
           </p>
         </div>
-        {pendingCount > 0 && (
-          <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-900">
-            {pendingCount} pending
-          </span>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="secondary" onClick={load} disabled={loading || busy}>
+            <RefreshCw className={`h-4 w-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          {pendingCount > 0 && (
+            <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-900">
+              {pendingCount} pending
+            </span>
+          )}
+          {awaitingPosCount > 0 && (
+            <span className="inline-flex items-center rounded-full bg-emerald-100 px-3 py-1 text-sm font-semibold text-emerald-900">
+              {awaitingPosCount} ready for POS
+            </span>
+          )}
+        </div>
       </div>
 
       {error && <InlineAlert message={error} />}
@@ -169,85 +207,98 @@ export const OnlineBookingsView: React.FC<OnlineBookingsViewProps> = ({
         </DashboardSurface>
       ) : (
         <ul className="space-y-4">
-          {filtered.map((b) => (
-            <li key={b.id}>
-              <DashboardSurface className="p-5">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="min-w-0 space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-semibold text-slate-900">{b.fullName}</h3>
-                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase ${statusBadge(b.status)}`}>
-                        {b.status}
-                      </span>
+          {filtered.map((b) => {
+            const hasSale = Boolean(b.transactionId);
+            return (
+              <li key={b.id}>
+                <DashboardSurface className="p-5">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-semibold text-slate-900">{b.fullName}</h3>
+                        <span
+                          className={`rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase ${statusBadge(b.status, hasSale)}`}
+                        >
+                          {statusLabel(b.status, hasSale)}
+                        </span>
+                      </div>
+                      <p className="text-sm font-medium text-indigo-700">{b.serviceLabel}</p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600">
+                        <span className="inline-flex items-center gap-1">
+                          <Phone className="h-3.5 w-3.5" />
+                          {b.phone}
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          <Mail className="h-3.5 w-3.5" />
+                          {b.email}
+                        </span>
+                      </div>
+                      {b.preferredDate && (
+                        <p className="text-sm text-slate-600 inline-flex items-center gap-1">
+                          <CalendarClock className="h-3.5 w-3.5" />
+                          Preferred: {b.preferredDate}
+                        </p>
+                      )}
+                      {b.vehicleDescription && (
+                        <p className="text-sm text-slate-600 inline-flex items-center gap-1">
+                          <Car className="h-3.5 w-3.5" />
+                          {b.vehicleDescription}
+                        </p>
+                      )}
+                      {b.notes && <p className="text-sm text-slate-500 border-l-2 border-slate-200 pl-3">{b.notes}</p>}
+                      <p className="text-xs text-slate-400">Submitted {new Date(b.createdAt).toLocaleString()}</p>
+                      {b.status === 'confirmed' && (
+                        <p className="text-xs text-emerald-700">
+                          Accepted {b.confirmedAt ? new Date(b.confirmedAt).toLocaleString() : ''}
+                          {b.quotedAmount != null && b.quotedAmount > 0 ? ` · Est. ₱${b.quotedAmount.toFixed(2)}` : ''}
+                          {hasSale ? ` · Sale #${b.transactionId!.slice(0, 8)}` : ' · Awaiting POS checkout'}
+                        </p>
+                      )}
                     </div>
-                    <p className="text-sm font-medium text-indigo-700">{b.serviceLabel}</p>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600">
-                      <span className="inline-flex items-center gap-1">
-                        <Phone className="h-3.5 w-3.5" />
-                        {b.phone}
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <Mail className="h-3.5 w-3.5" />
-                        {b.email}
-                      </span>
-                    </div>
-                    {b.preferredDate && (
-                      <p className="text-sm text-slate-600 inline-flex items-center gap-1">
-                        <CalendarClock className="h-3.5 w-3.5" />
-                        Preferred: {b.preferredDate}
-                      </p>
-                    )}
-                    {b.vehicleDescription && (
-                      <p className="text-sm text-slate-600 inline-flex items-center gap-1">
-                        <Car className="h-3.5 w-3.5" />
-                        {b.vehicleDescription}
-                      </p>
-                    )}
-                    {b.notes && <p className="text-sm text-slate-500 border-l-2 border-slate-200 pl-3">{b.notes}</p>}
-                    <p className="text-xs text-slate-400">
-                      Submitted {new Date(b.createdAt).toLocaleString()}
-                    </p>
-                    {b.status === 'confirmed' && (
-                      <p className="text-xs text-emerald-700">
-                        Confirmed {b.confirmedAt ? new Date(b.confirmedAt).toLocaleString() : ''}
-                        {b.quotedAmount != null && b.quotedAmount > 0 ? ` · ₱${b.quotedAmount.toFixed(2)}` : ''}
-                        {b.transactionId ? ` · Sale #${b.transactionId.slice(0, 8)}` : ''}
-                      </p>
+                    {canEdit && (
+                      <div className="flex shrink-0 flex-wrap gap-2">
+                        {b.status === 'pending' && (
+                          <>
+                            <Button type="button" onClick={() => openConfirm(b)} className="bg-emerald-600 hover:bg-emerald-700">
+                              <CheckCircle2 className="h-4 w-4 mr-1" />
+                              Accept booking
+                            </Button>
+                            <Button type="button" variant="secondary" onClick={() => handleCancel(b)} disabled={busy}>
+                              <XCircle className="h-4 w-4 mr-1" />
+                              Cancel
+                            </Button>
+                          </>
+                        )}
+                        {b.status === 'confirmed' && !hasSale && onTransferToPos && (
+                          <Button type="button" onClick={() => handleTransferToPos(b)} className="bg-indigo-600 hover:bg-indigo-700">
+                            <ShoppingBag className="h-4 w-4 mr-1" />
+                            Transfer to POS
+                          </Button>
+                        )}
+                      </div>
                     )}
                   </div>
-                  {canEdit && b.status === 'pending' && (
-                    <div className="flex shrink-0 flex-wrap gap-2">
-                      <Button type="button" onClick={() => openConfirm(b)} className="bg-emerald-600 hover:bg-emerald-700">
-                        <CheckCircle2 className="h-4 w-4 mr-1" />
-                        Confirm &amp; post sale
-                      </Button>
-                      <Button type="button" variant="secondary" onClick={() => handleCancel(b)} disabled={busy}>
-                        <XCircle className="h-4 w-4 mr-1" />
-                        Cancel
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </DashboardSurface>
-            </li>
-          ))}
+                </DashboardSurface>
+              </li>
+            );
+          })}
         </ul>
       )}
 
       {confirmTarget && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-4">
           <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
-            <h3 className="text-lg font-semibold text-slate-900">Confirm booking</h3>
+            <h3 className="text-lg font-semibold text-slate-900">Accept booking</h3>
             <p className="mt-1 text-sm text-slate-600">
               {confirmTarget.fullName} — {confirmTarget.serviceLabel}
             </p>
             <p className="mt-3 text-xs text-slate-500">
-              Creates customer account, optional vehicle, and a <strong>Service</strong> sale in history / sales
-              reports. Set quoted amount and payment type.
+              Creates the customer account and vehicle record. The sale is completed later in POS using{' '}
+              <strong>Transfer to POS</strong> so payment, discounts, parts, and billing work like a normal checkout.
             </p>
             <div className="mt-4 space-y-3">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Quoted amount (₱)</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Estimated amount for POS (₱)</label>
                 <input
                   type="number"
                   min={0}
@@ -256,9 +307,10 @@ export const OnlineBookingsView: React.FC<OnlineBookingsViewProps> = ({
                   value={quotedAmount}
                   onChange={(e) => setQuotedAmount(e.target.value)}
                 />
+                <p className="mt-1 text-xs text-slate-400">Optional — pre-fills the service price in POS. You can change it there.</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Payment</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Suggested payment (POS)</label>
                 <select
                   className="w-full rounded-lg border border-slate-200 px-3 py-2"
                   value={modeOfPayment}
@@ -298,7 +350,7 @@ export const OnlineBookingsView: React.FC<OnlineBookingsViewProps> = ({
                 Back
               </Button>
               <Button type="button" fullWidth onClick={handleConfirm} disabled={busy} className="bg-emerald-600 hover:bg-emerald-700">
-                {busy ? 'Posting…' : 'Confirm'}
+                {busy ? 'Saving…' : 'Accept booking'}
               </Button>
             </div>
           </div>

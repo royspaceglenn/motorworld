@@ -3,6 +3,7 @@ import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { useAuth } from './lib/auth/AuthContext';
 import {
   activityApi,
+  bookingsApi,
   itemsApi,
   personsApi,
   transactionsApi,
@@ -49,6 +50,7 @@ import { BillingStatementPrintModal } from './components/BillingStatementPrintMo
 import { DocumentArchivesView } from './components/DocumentArchivesView';
 import { OnlineBookingsView } from './components/OnlineBookingsView';
 import { EmployeeSalaryView } from './components/EmployeeSalaryView';
+import type { PosBookingTransfer } from './lib/posBookingTransfer';
 import { DocumentPrintPreviewModal } from './components/DocumentPrintPreviewModal';
 import { subscribeDocumentPreview } from './lib/documentPreviewBus';
 import type { DocumentPreviewDoc } from './lib/documentPreviewBus';
@@ -153,6 +155,9 @@ const App: React.FC = () => {
 
   const [itemToEdit, setItemToEdit] = useState<InventoryItem | undefined>(undefined);
   const [inventoryFeedback, setInventoryFeedback] = useState<{ message: string; variant?: 'success' | 'error' } | null>(null);
+  const [posBookingTransfer, setPosBookingTransfer] = useState<PosBookingTransfer | null>(null);
+  const [pendingOnlineBookings, setPendingOnlineBookings] = useState(0);
+  const [awaitingPosBookings, setAwaitingPosBookings] = useState(0);
   const [itemToRelease, setItemToRelease] = useState<InventoryItem | null>(null);
   const [itemToIssue, setItemToIssue] = useState<InventoryItem | null>(null);
   const [itemToReturn, setItemToReturn] = useState<InventoryItem | null>(null);
@@ -234,6 +239,25 @@ const App: React.FC = () => {
       .then((res) => setVehicles(res.vehicles ?? []))
       .catch(() => {});
   }, [user?.id, normalizeItem]);
+
+  const refreshOnlineBookingCounts = React.useCallback(() => {
+    if (getStoredActiveShopId() !== 'motorworld' || !canEdit || USE_FIRESTORE_ADMIN_DATA) return;
+    bookingsApi
+      .list()
+      .then((res) => {
+        const list = res.bookings ?? [];
+        setPendingOnlineBookings(list.filter((b) => b.status === 'pending').length);
+        setAwaitingPosBookings(list.filter((b) => b.status === 'confirmed' && !b.transactionId).length);
+      })
+      .catch(() => {});
+  }, [canEdit]);
+
+  useEffect(() => {
+    refreshOnlineBookingCounts();
+    if (getStoredActiveShopId() !== 'motorworld' || !canEdit || USE_FIRESTORE_ADMIN_DATA) return;
+    const timer = window.setInterval(refreshOnlineBookingCounts, 60_000);
+    return () => window.clearInterval(timer);
+  }, [refreshOnlineBookingCounts, canEdit]);
 
   useEffect(() => {
     if (!user) return;
@@ -479,24 +503,9 @@ const App: React.FC = () => {
           minStockLevel: itemData.minStockLevel ?? 0,
           receiptNumber: itemData.receiptNumber,
         })
-        .then((created) => {
-          const newItem = norm(created) as InventoryItem;
-          setItems((prev) => [...prev, newItem]);
-          const cap = Number(created.capitalPrice ?? created.unitPrice);
-          const transaction: Transaction = {
-            id: crypto.randomUUID(),
-            itemId: created.id,
-            itemName: created.name,
-            type: 'ADDITION',
-            quantityChange: created.quantity,
-            unitPriceAtTime: cap,
-            sellingPriceAtTime: Number(created.unitPrice),
-            totalValue: created.quantity * cap,
-            timestamp: now,
-            note: 'Initial Stock',
-            receiptNumber: created.receiptNumber,
-          };
-          setTransactions((prev) => [transaction, ...prev]);
+        .then(() => {
+          fetchItemsAndTransactions();
+          setInventoryFeedback({ message: 'Item saved.', variant: 'success' });
         })
         .catch((err) => {
           throw new Error(err instanceof Error ? err.message : 'Failed to create item.');
@@ -922,7 +931,7 @@ const App: React.FC = () => {
     },
     sales_summary: {
       title: 'Sales summary',
-      description: 'Monthly revenue, COGS, discounts, gross profit, expenses, and net income using the same P&L order as standard sales summary reports.',
+      description: 'P&L totals plus SR-1 sales register (line-by-line sales from POS), deposit report, and printable summaries.',
     },
     billing_statement: {
       title: 'Billing statement',
@@ -974,7 +983,7 @@ const App: React.FC = () => {
     },
     online_bookings: {
       title: 'Online bookings',
-      description: 'Website service requests — confirm to create customer records and service sales.',
+      description: 'Website service requests — accept, then transfer to POS to complete the sale.',
     },
     employee_salary: {
       title: 'Employee salary',
@@ -1063,6 +1072,17 @@ const App: React.FC = () => {
                         label={item.label}
                         active={view === item.id}
                         onClick={() => setView(item.id)}
+                        suffix={
+                          item.id === 'online_bookings' && pendingOnlineBookings > 0 ? (
+                            <span className="rounded-full bg-amber-400 px-2 py-0.5 text-[11px] font-bold text-slate-900">
+                              {pendingOnlineBookings}
+                            </span>
+                          ) : item.id === 'online_bookings' && awaitingPosBookings > 0 ? (
+                            <span className="rounded-full bg-emerald-400 px-2 py-0.5 text-[11px] font-bold text-slate-900">
+                              POS
+                            </span>
+                          ) : undefined
+                        }
                       />
                     ))}
                   </div>
@@ -1144,6 +1164,33 @@ const App: React.FC = () => {
         </aside>
 
         <main className="min-w-0 flex-1 py-1">
+          {isMotorWorldShop && canEdit && (pendingOnlineBookings > 0 || awaitingPosBookings > 0) && (
+            <div className="mb-4 px-1">
+              <DashboardSurface className="border-indigo-200 bg-indigo-50/95 p-4 text-sm text-indigo-950">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-semibold text-indigo-950">Online bookings need attention</p>
+                    <p className="mt-1 text-indigo-900/80">
+                      {pendingOnlineBookings > 0 && (
+                        <span>
+                          {pendingOnlineBookings} pending request{pendingOnlineBookings === 1 ? '' : 's'}
+                        </span>
+                      )}
+                      {pendingOnlineBookings > 0 && awaitingPosBookings > 0 ? ' · ' : null}
+                      {awaitingPosBookings > 0 && (
+                        <span>
+                          {awaitingPosBookings} ready to transfer to POS
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  <Button variant="secondary" className="shrink-0" onClick={() => setView('online_bookings')}>
+                    Open online bookings
+                  </Button>
+                </div>
+              </DashboardSurface>
+            </div>
+          )}
           {user && (chequeReminders.pending.length > 0 || chequeReminders.bounced.length > 0) && (
             <div className="mb-4 px-1">
               <DashboardSurface className="border-amber-200 bg-amber-50/95 p-4 text-sm text-amber-950">
@@ -1450,7 +1497,7 @@ const App: React.FC = () => {
         {/* --- INVENTORY VIEW --- */}
         {view === 'sales_summary' && (
           <div>
-            <SalesSummaryReportView transactions={transactions} items={items} />
+            <SalesSummaryReportView transactions={transactions} items={items} persons={persons} vehicles={vehicles} />
           </div>
         )}
         {view === 'billing_statement' && (
@@ -1470,7 +1517,12 @@ const App: React.FC = () => {
               persons={persons}
               vehicles={vehicles}
               canEdit={canEdit}
-              onSaleComplete={fetchItemsAndTransactions}
+              onSaleComplete={() => {
+                fetchItemsAndTransactions();
+                refreshOnlineBookingCounts();
+              }}
+              bookingTransfer={posBookingTransfer}
+              onBookingTransferCleared={() => setPosBookingTransfer(null)}
             />
           </div>
         )}
@@ -1479,7 +1531,14 @@ const App: React.FC = () => {
             <OnlineBookingsView
               canEdit={canEdit}
               isMotorWorldShop={isMotorWorldShop}
-              onBookingConfirmed={fetchItemsAndTransactions}
+              onBookingConfirmed={() => {
+                fetchItemsAndTransactions();
+                refreshOnlineBookingCounts();
+              }}
+              onTransferToPos={(transfer) => {
+                setPosBookingTransfer(transfer);
+                setView('pos');
+              }}
             />
           </div>
         )}

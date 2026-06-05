@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import type { Expense, InventoryItem, Transaction } from '../types';
+import type { Expense, InventoryItem, Person, Transaction, Vehicle } from '../types';
 import { expensesApi } from '../lib/api/adminData';
 import {
   buildSalesDepositReportRows,
+  buildSalesRegisterLines,
   buildSalesSummaryReleaseDetails,
   computeMotorWorldSalesSummary,
   endOfLocalDay,
@@ -10,6 +11,7 @@ import {
   toLocalYmd,
   type MotorWorldSalesSummary,
   type SalesDepositReportRow,
+  type SalesRegisterLineRow,
   type SalesSummaryReleaseDetailRow,
 } from '../lib/salesSummaryReport';
 import { DashboardSectionHeader, DashboardSurface } from './ui/DashboardPrimitives';
@@ -231,12 +233,124 @@ function printSalesSummary(
   }, 350);
 }
 
+/** Landscape SR-1 sales register — line-by-line detail matching Motor World SR-1.pdf. */
+function printSalesRegisterSr1(rows: SalesRegisterLineRow[], rangeStart: Date, rangeEnd: Date) {
+  const win = window.open('', '_blank', 'width=1400,height=900');
+  if (!win) return;
+
+  const periodStart = rangeStart.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+  const periodEnd = rangeEnd.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+  const datePrepared = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+
+  const bodyRows =
+    rows.length === 0
+      ? '<tr><td colspan="24" class="center muted">No sales in this date range.</td></tr>'
+      : rows
+          .map((r) => {
+            const discClass = r.discountPeso > 0 ? 'neg' : '';
+            return `<tr>
+          <td class="nowrap">${escHtml(r.saleDate)}</td>
+          <td class="nowrap sm">${escHtml(r.dateCovered)}</td>
+          <td class="mono">${escHtml(r.crNo)}</td>
+          <td class="mono">${escHtml(r.bsNo)}</td>
+          <td class="mono">${escHtml(r.poNo)}</td>
+          <td class="sm">${escHtml(r.invoiceLabel)}</td>
+          <td class="sm">${escHtml(r.transactionType)}</td>
+          <td>${escHtml(r.customerName)}</td>
+          <td class="sm">${escHtml(r.address)}</td>
+          <td class="sm">${escHtml(r.carModel)}</td>
+          <td class="mono">${escHtml(r.plateNo)}</td>
+          <td class="sm">${escHtml(r.terms)}</td>
+          <td class="sm">${escHtml(r.supplierName)}</td>
+          <td class="mono">${escHtml(r.itemCode)}</td>
+          <td>${escHtml(r.description)}</td>
+          <td class="num">${r.qty}</td>
+          <td class="sm">${escHtml(r.uom)}</td>
+          <td class="num">${moneyPhp(r.costPerUnit)}</td>
+          <td class="num">${moneyPhp(r.totalCost)}</td>
+          <td class="num">${moneyPhp(r.unitPrice)}</td>
+          <td class="num">${moneyPhp(r.totalPrice)}</td>
+          <td class="num strong">${moneyPhp(r.transactionTotal)}</td>
+          <td class="num ${discClass}">${r.discountPeso > 0 ? moneyPhp(r.discountPeso) : '—'}</td>
+          <td class="num ${discClass}">${r.discountPercent > 0 ? `${r.discountPercent.toFixed(2)}%` : '—'}</td>
+        </tr>`;
+          })
+          .join('');
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"/><title>SR-1 Sales register ${escHtml(periodStart)} – ${escHtml(periodEnd)}</title>
+<style>
+  @page { size: landscape; margin: 8mm; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; padding: 8px 10px; font-size: 7px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #1e3a8a; padding-bottom: 8px; margin-bottom: 8px; }
+  .co { font-weight: 800; font-size: 12px; color: #1e40af; }
+  .sub { font-size: 8px; color: #334155; margin-top: 3px; }
+  .period { text-align: right; font-size: 8px; }
+  .period strong { display: block; color: #1e40af; font-size: 11px; letter-spacing: 0.12em; margin-bottom: 4px; }
+  .title { text-align: center; font-weight: 800; font-size: 11px; color: #1e40af; letter-spacing: 0.14em; margin: 6px 0 8px; }
+  table.main { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  table.main th, table.main td { border: 1px solid #0f172a; padding: 3px 4px; vertical-align: top; word-wrap: break-word; }
+  table.main thead th { background: #e2e8f0; font-weight: 700; font-size: 6px; text-transform: uppercase; letter-spacing: 0.03em; text-align: center; line-height: 1.2; }
+  table.main .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  table.main .nowrap { white-space: nowrap; }
+  table.main .mono { font-family: Consolas, monospace; font-size: 6.5px; }
+  table.main .sm { font-size: 6.5px; }
+  .neg { color: #b91c1c; font-weight: 600; }
+  .strong { font-weight: 700; }
+  .muted { color: #64748b; }
+  .center { text-align: center; }
+  .prep { margin-top: 10px; font-size: 8px; }
+  @media print { body { padding: 0; } }
+</style></head><body>
+  <div class="header">
+    <div>
+      <div class="co">MOTOR WORLD AUTO SERVICES &amp; SALES CORPORATION</div>
+      <div class="sub">SR-1 Sales register — generated from system transactions (POS / releases).</div>
+    </div>
+    <div class="period">
+      <strong>SR-1</strong>
+      <div><strong>From:</strong> ${escHtml(periodStart)}</div>
+      <div><strong>To:</strong> ${escHtml(periodEnd)}</div>
+    </div>
+  </div>
+  <div class="title">SALES REGISTER (SR-1)</div>
+  <table class="main">
+    <thead>
+      <tr>
+        <th>Date</th><th>Date covered</th><th>CR no.</th><th>BS no.</th><th>PO no.</th>
+        <th>Invoice</th><th>Type</th><th>Customer</th><th>Address</th><th>Car model</th>
+        <th>Plate</th><th>Terms</th><th>Supplier</th><th>Item code</th><th>Description</th>
+        <th>Qty</th><th>UOM</th><th>Cost/unit</th><th>Total cost</th><th>Unit price</th>
+        <th>Total price</th><th>Txn total</th><th>Disc (₱)</th><th>Disc %</th>
+      </tr>
+    </thead>
+    <tbody>${bodyRows}</tbody>
+  </table>
+  <p class="prep"><strong>DATE PREPARED:</strong> ${escHtml(datePrepared)} · <strong>Lines:</strong> ${rows.length}</p>
+</body></html>`;
+
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  setTimeout(() => {
+    win.focus();
+    win.print();
+  }, 350);
+}
+
 interface SalesSummaryReportViewProps {
   transactions: Transaction[];
   items: InventoryItem[];
+  persons?: Person[];
+  vehicles?: Vehicle[];
 }
 
-export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({ transactions, items }) => {
+export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({
+  transactions,
+  items,
+  persons = [],
+  vehicles = [],
+}) => {
   const defaults = useMemo(() => defaultMonthRangeYmd(), []);
   const [startDate, setStartDate] = useState(defaults.start);
   const [endDate, setEndDate] = useState(defaults.end);
@@ -281,6 +395,11 @@ export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({ 
     return buildSalesDepositReportRows(transactions, rangeStart, rangeEnd);
   }, [transactions, invalidRange, rangeStart, rangeEnd]);
 
+  const salesRegisterRows = useMemo(() => {
+    if (invalidRange) return [];
+    return buildSalesRegisterLines(transactions, items, persons, vehicles, rangeStart, rangeEnd);
+  }, [transactions, items, persons, vehicles, invalidRange, rangeStart, rangeEnd]);
+
   const expensesInRange = useMemo(() => {
     if (!summary) return [];
     const lo = summary.startDate;
@@ -305,13 +424,13 @@ export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({ 
   };
 
   return (
-    <div className="animate-fade-in max-w-5xl space-y-6">
+    <div className="animate-fade-in max-w-full space-y-6">
       <DashboardSurface className="p-5 sm:p-6">
         <DashboardSectionHeader
           eyebrow="Finance"
           title="Sales summary report"
           description={
-            'Choose any report date range. P&L totals below. Print deposit report opens a landscape Motor World–style sales deposit sheet with customer name and sale reference on each line.'
+            'Choose any report date range. P&L totals below. SR-1 sales register lists every sale line (customer, vehicle, item, cost, price, discount) from system data. Print deposit report opens the landscape collection sheet.'
           }
         />
 
@@ -349,6 +468,15 @@ export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({ 
               <FileSpreadsheet className="w-4 h-4 text-indigo-600 shrink-0" />
               {invalidRange ? '—' : summary?.periodLabel}
             </p>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={invalidRange || !summary || loading || salesRegisterRows.length === 0}
+              onClick={() => printSalesRegisterSr1(salesRegisterRows, rangeStart, rangeEnd)}
+            >
+              <Printer className="w-4 h-4 mr-1.5" />
+              Print SR-1 register
+            </Button>
             <Button
               type="button"
               variant="secondary"
@@ -449,6 +577,96 @@ export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({ 
               Formula: (Goods + Service revenue) − COGS − Discounts = Gross profit; then Gross profit − Expenses = Net income. COGS uses{' '}
               <span className="font-medium text-slate-700">total cost at sale</span> on POS lines or inventory capital price for older
               records.
+            </p>
+          </DashboardSurface>
+
+          <DashboardSurface className="p-5 sm:p-6">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-1">SR-1 sales register</h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Same layout as your <strong>SR-1.pdf</strong> — one row per line item with customer, vehicle, supplier/brand, item
+              code, cost, selling price, and discount. Data comes from POS releases in the selected range.
+            </p>
+            <div className="overflow-x-auto border border-slate-900 rounded-sm">
+              {salesRegisterRows.length === 0 ? (
+                <p className="p-6 text-sm text-slate-500">No sales in this range.</p>
+              ) : (
+                <table className="w-full text-[10px] min-w-[1800px] border-collapse">
+                  <thead>
+                    <tr className="bg-slate-200">
+                      <th className="border border-slate-900 px-1.5 py-1.5 text-left font-bold whitespace-nowrap">Date</th>
+                      <th className="border border-slate-900 px-1.5 py-1.5 text-left font-bold whitespace-nowrap">Covered</th>
+                      <th className="border border-slate-900 px-1.5 py-1.5 text-left font-bold">CR</th>
+                      <th className="border border-slate-900 px-1.5 py-1.5 text-left font-bold">BS</th>
+                      <th className="border border-slate-900 px-1.5 py-1.5 text-left font-bold">PO</th>
+                      <th className="border border-slate-900 px-1.5 py-1.5 text-left font-bold">Invoice</th>
+                      <th className="border border-slate-900 px-1.5 py-1.5 text-left font-bold">Type</th>
+                      <th className="border border-slate-900 px-1.5 py-1.5 text-left font-bold">Customer</th>
+                      <th className="border border-slate-900 px-1.5 py-1.5 text-left font-bold">Address</th>
+                      <th className="border border-slate-900 px-1.5 py-1.5 text-left font-bold">Car</th>
+                      <th className="border border-slate-900 px-1.5 py-1.5 text-left font-bold">Plate</th>
+                      <th className="border border-slate-900 px-1.5 py-1.5 text-left font-bold">Terms</th>
+                      <th className="border border-slate-900 px-1.5 py-1.5 text-left font-bold">Supplier</th>
+                      <th className="border border-slate-900 px-1.5 py-1.5 text-left font-bold">Code</th>
+                      <th className="border border-slate-900 px-1.5 py-1.5 text-left font-bold">Description</th>
+                      <th className="border border-slate-900 px-1.5 py-1.5 text-right font-bold">Qty</th>
+                      <th className="border border-slate-900 px-1.5 py-1.5 text-left font-bold">UOM</th>
+                      <th className="border border-slate-900 px-1.5 py-1.5 text-right font-bold">Cost/u</th>
+                      <th className="border border-slate-900 px-1.5 py-1.5 text-right font-bold">Tot cost</th>
+                      <th className="border border-slate-900 px-1.5 py-1.5 text-right font-bold">Unit ₱</th>
+                      <th className="border border-slate-900 px-1.5 py-1.5 text-right font-bold">Line ₱</th>
+                      <th className="border border-slate-900 px-1.5 py-1.5 text-right font-bold">Txn ₱</th>
+                      <th className="border border-slate-900 px-1.5 py-1.5 text-right font-bold text-red-800">Disc</th>
+                      <th className="border border-slate-900 px-1.5 py-1.5 text-right font-bold text-red-800">%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {salesRegisterRows.map((r, idx) => (
+                      <tr key={`${r.transactionId}-${idx}`} className="bg-white hover:bg-slate-50/80">
+                        <td className="border border-slate-900 px-1.5 py-1 whitespace-nowrap">{r.saleDate}</td>
+                        <td className="border border-slate-900 px-1.5 py-1 whitespace-nowrap text-[9px]">{r.dateCovered}</td>
+                        <td className="border border-slate-900 px-1.5 py-1 font-mono">{r.crNo}</td>
+                        <td className="border border-slate-900 px-1.5 py-1 font-mono text-[9px]">{r.bsNo}</td>
+                        <td className="border border-slate-900 px-1.5 py-1 font-mono text-[9px]">{r.poNo}</td>
+                        <td className="border border-slate-900 px-1.5 py-1 text-[9px]">{r.invoiceLabel}</td>
+                        <td className="border border-slate-900 px-1.5 py-1">{r.transactionType}</td>
+                        <td className="border border-slate-900 px-1.5 py-1 max-w-[120px] truncate" title={r.customerName}>
+                          {r.customerName}
+                        </td>
+                        <td className="border border-slate-900 px-1.5 py-1 max-w-[100px] truncate text-[9px]" title={r.address}>
+                          {r.address}
+                        </td>
+                        <td className="border border-slate-900 px-1.5 py-1 text-[9px] max-w-[90px] truncate" title={r.carModel}>
+                          {r.carModel}
+                        </td>
+                        <td className="border border-slate-900 px-1.5 py-1 font-mono">{r.plateNo}</td>
+                        <td className="border border-slate-900 px-1.5 py-1 text-[9px]">{r.terms}</td>
+                        <td className="border border-slate-900 px-1.5 py-1 text-[9px]">{r.supplierName}</td>
+                        <td className="border border-slate-900 px-1.5 py-1 font-mono text-[9px]">{r.itemCode}</td>
+                        <td className="border border-slate-900 px-1.5 py-1 max-w-[140px] truncate" title={r.description}>
+                          {r.description}
+                        </td>
+                        <td className="border border-slate-900 px-1.5 py-1 text-right tabular-nums">{r.qty}</td>
+                        <td className="border border-slate-900 px-1.5 py-1 text-[9px]">{r.uom}</td>
+                        <td className="border border-slate-900 px-1.5 py-1 text-right tabular-nums">{money(r.costPerUnit)}</td>
+                        <td className="border border-slate-900 px-1.5 py-1 text-right tabular-nums">{money(r.totalCost)}</td>
+                        <td className="border border-slate-900 px-1.5 py-1 text-right tabular-nums">{money(r.unitPrice)}</td>
+                        <td className="border border-slate-900 px-1.5 py-1 text-right tabular-nums">{money(r.totalPrice)}</td>
+                        <td className="border border-slate-900 px-1.5 py-1 text-right font-semibold tabular-nums">{money(r.transactionTotal)}</td>
+                        <td className="border border-slate-900 px-1.5 py-1 text-right tabular-nums text-red-800">
+                          {r.discountPeso > 0 ? money(r.discountPeso) : '—'}
+                        </td>
+                        <td className="border border-slate-900 px-1.5 py-1 text-right tabular-nums text-red-800">
+                          {r.discountPercent > 0 ? `${r.discountPercent.toFixed(2)}%` : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              {salesRegisterRows.length} line(s) · {summary.releaseCount} sale(s). Use <strong>Print SR-1 register</strong> for
+              landscape PDF/print output.
             </p>
           </DashboardSurface>
 

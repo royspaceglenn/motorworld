@@ -676,7 +676,8 @@ export async function countUsersByRole(role) {
 }
 
 export async function getAllItems() {
-  return (await collectionsBackend.readCollection(COLLECTIONS.items, [])).map(itemToApi);
+  const consolidated = await consolidateDuplicateInventoryItems();
+  return consolidated.items;
 }
 
 export async function getItemById(id) {
@@ -686,6 +687,26 @@ export async function getItemById(id) {
 
 export async function createItem(itemData) {
   const items = await collectionsBackend.readCollection(COLLECTIONS.items, []);
+  const mergeMatch = findItemByMergeKey(items, itemData);
+  if (mergeMatch) {
+    const addQty = Math.max(0, normalizeNumber(itemData.quantity));
+    const addDef = Math.max(0, normalizeNumber(itemData.defectiveQuantity ?? itemData.defective_quantity));
+    const index = items.findIndex((entry) => entry.id === mergeMatch.id);
+    if (index === -1) return null;
+    items[index] = {
+      ...items[index],
+      quantity: normalizeNumber(items[index].quantity) + addQty,
+      defective_quantity:
+        normalizeNumber(items[index].defective_quantity ?? items[index].defectiveQuantity) + addDef,
+      last_updated: nowIso(),
+    };
+    await collectionsBackend.writeCollection(COLLECTIONS.items, items);
+    const merged = itemToApi(items[index]);
+    merged.quantityAdded = addQty;
+    merged.wasMerged = true;
+    return merged;
+  }
+
   const created = {
     id: itemData.id || crypto.randomUUID(),
     item_code: normalizeString(itemData.itemCode ?? itemData.item_code),
@@ -763,12 +784,110 @@ export async function deleteItem(id) {
   return true;
 }
 
-function findItemRowByCode(items, itemCode) {
-  const code = normalizeString(itemCode).toUpperCase();
-  if (!code) return null;
-  return (
-    items.find((entry) => normalizeString(entry.item_code ?? entry.itemCode).toUpperCase() === code) ?? null
-  );
+function roundMoney(value) {
+  const n = normalizeNumber(value);
+  return Math.round(n * 100) / 100;
+}
+
+function normalizeItemMergeSnapshot(raw) {
+  const purposeRaw = raw.stockPurpose ?? raw.stock_purpose;
+  return {
+    itemCode: normalizeString(raw.itemCode ?? raw.item_code).toUpperCase(),
+    name: String(raw.name ?? raw.productName ?? '').trim(),
+    brand: String(raw.brand ?? '').trim(),
+    category: String(raw.category ?? raw.productType ?? 'Uncategorized').trim() || 'Uncategorized',
+    unit: String(raw.unit ?? raw.uom ?? 'pcs').trim().toLowerCase() || 'pcs',
+    unitPrice: roundMoney(raw.unitPrice ?? raw.unit_price ?? raw.srpPrice),
+    capitalPrice: roundMoney(
+      raw.capitalPrice ?? raw.capital_price ?? raw.unitCost ?? raw.unitPrice ?? raw.unit_price ?? raw.srpPrice
+    ),
+    stockPurpose: purposeRaw === 'for_supply' ? 'for_supply' : 'for_sale',
+    minStockLevel: Math.round(normalizeNumber(raw.minStockLevel ?? raw.min_stock_level ?? 0)),
+  };
+}
+
+function itemMergeKeyFromSnapshot(snapshot) {
+  return JSON.stringify(snapshot);
+}
+
+function itemRowMergeKey(row) {
+  return itemMergeKeyFromSnapshot(normalizeItemMergeSnapshot(row));
+}
+
+function findItemByMergeKey(items, candidate) {
+  const key = itemMergeKeyFromSnapshot(normalizeItemMergeSnapshot(candidate));
+  return items.find((entry) => itemRowMergeKey(entry) === key) ?? null;
+}
+
+/**
+ * Merge inventory rows that match on code, name, brand, type, UOM, prices, and stock use.
+ * Different UOM or any other field → kept as separate stock lines.
+ */
+export async function consolidateDuplicateInventoryItems() {
+  let items = await collectionsBackend.readCollection(COLLECTIONS.items, []);
+  const groups = new Map();
+
+  for (const item of items) {
+    const key = itemRowMergeKey(item);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  }
+
+  const idsToDelete = [];
+  const reassign = new Map();
+  let mergedGroups = 0;
+
+  for (const group of groups.values()) {
+    if (group.length <= 1) continue;
+    mergedGroups += 1;
+    group.sort(
+      (a, b) =>
+        new Date(a.created_at ?? a.createdAt ?? 0).getTime() -
+        new Date(b.created_at ?? b.createdAt ?? 0).getTime()
+    );
+    const keeper = group[0];
+    let totalQty = 0;
+    let totalDef = 0;
+
+    for (const entry of group) {
+      totalQty += normalizeNumber(entry.quantity);
+      totalDef += normalizeNumber(entry.defective_quantity ?? entry.defectiveQuantity);
+      if (entry.id !== keeper.id) {
+        idsToDelete.push(entry.id);
+        reassign.set(entry.id, keeper.id);
+      }
+    }
+
+    const keeperIndex = items.findIndex((entry) => entry.id === keeper.id);
+    if (keeperIndex !== -1) {
+      items[keeperIndex] = {
+        ...items[keeperIndex],
+        quantity: totalQty,
+        defective_quantity: totalDef,
+        last_updated: nowIso(),
+      };
+    }
+  }
+
+  if (!mergedGroups) {
+    return { mergedGroups: 0, items: items.map(itemToApi) };
+  }
+
+  if (reassign.size) {
+    const transactions = await collectionsBackend.readCollection(COLLECTIONS.transactions, []);
+    const updatedTransactions = transactions.map((tx) => {
+      const itemId = tx.item_id ?? tx.itemId;
+      const keeperId = reassign.get(itemId);
+      if (!keeperId) return tx;
+      return { ...tx, item_id: keeperId, itemId: keeperId };
+    });
+    await collectionsBackend.writeCollection(COLLECTIONS.transactions, updatedTransactions);
+  }
+
+  items = items.filter((entry) => !idsToDelete.includes(entry.id));
+  await collectionsBackend.writeCollection(COLLECTIONS.items, items);
+
+  return { mergedGroups, items: items.map(itemToApi) };
 }
 
 async function postItemAdditionFromImport(item, note) {
@@ -839,7 +958,18 @@ export async function importInventoryPriceList(rows, options = {}) {
 
     try {
       const allRows = await collectionsBackend.readCollection(COLLECTIONS.items, []);
-      const existingRow = findItemRowByCode(allRows, itemCode);
+      const candidate = {
+        itemCode,
+        name,
+        brand,
+        category,
+        unit,
+        unitPrice,
+        capitalPrice,
+        stockPurpose: 'for_sale',
+        minStockLevel: 0,
+      };
+      const existingRow = findItemByMergeKey(allRows, candidate);
 
       if (existingRow) {
         if (mode === 'createOnly') {
@@ -847,12 +977,13 @@ export async function importInventoryPriceList(rows, options = {}) {
           continue;
         }
         const beforeQty = normalizeNumber(existingRow.quantity);
+        const mergedQty = beforeQty + quantity;
         const updated = await updateItem(existingRow.id, {
           name,
           brand,
           category,
           unit,
-          quantity,
+          quantity: mergedQty,
           unitPrice,
           capitalPrice,
           description: existingRow.description || `${category} — ${brand}`.trim(),
@@ -885,6 +1016,9 @@ export async function importInventoryPriceList(rows, options = {}) {
       results.errors.push(`${rowLabel}: ${e?.message || 'import failed.'}`);
     }
   }
+
+  const consolidated = await consolidateDuplicateInventoryItems();
+  results.mergedGroups = consolidated.mergedGroups;
 
   return results;
 }
@@ -1953,6 +2087,10 @@ function bookingToApi(row) {
         : null,
     modeOfPayment: row.mode_of_payment ?? row.modeOfPayment ?? null,
     confirmNote: row.confirm_note ?? row.confirmNote ?? null,
+    dueDays:
+      row.due_days != null || row.dueDays != null
+        ? normalizeNumber(row.due_days ?? row.dueDays)
+        : null,
     shopId: row.shop_id ?? row.shopId ?? getActiveShopId(),
   };
 }
@@ -1997,6 +2135,7 @@ export async function createOnlineBooking(data) {
     quoted_amount: null,
     mode_of_payment: null,
     confirm_note: null,
+    due_days: null,
     shop_id: getActiveShopId(),
   };
   bookings.unshift(created);
@@ -2037,7 +2176,7 @@ async function findOrCreateVehicleForBooking(personId, bookingRow) {
 }
 
 /**
- * Confirm a pending booking: ensure customer + vehicle, post a Service RELEASE, link IDs.
+ * Accept a pending booking: ensure customer + vehicle records, mark confirmed (sale finished in POS).
  */
 export async function confirmOnlineBooking(id, options = {}) {
   const bookings = await collectionsBackend.readCollection(COLLECTIONS.onlineBookings, []);
@@ -2053,62 +2192,10 @@ export async function confirmOnlineBooking(id, options = {}) {
   const confirmNote = String(options.confirmNote || '').trim();
   const confirmedBy = String(options.confirmedBy || '').trim();
   const dueDays =
-    options.dueDays != null ? Math.min(365, Math.max(1, Number(options.dueDays) || 30)) : 30;
+    options.dueDays != null ? Math.min(365, Math.max(1, Number(options.dueDays) || 30)) : null;
 
   const person = await findOrCreatePersonForBooking(row);
   const vehicle = await findOrCreateVehicleForBooking(person.id, row);
-
-  const preferred = String(row.preferred_date || '').trim();
-  const timestamp =
-    preferred && /^\d{4}-\d{2}-\d{2}$/.test(preferred)
-      ? new Date(`${preferred}T12:00:00`).toISOString()
-      : nowIso();
-
-  const serviceLabel = String(row.service_label || 'Online booking service').trim();
-  const noteParts = [
-    `Online booking #${String(row.id).slice(0, 8)}`,
-    row.notes ? String(row.notes).trim() : '',
-    confirmNote,
-  ].filter(Boolean);
-
-  const txPayload = {
-    id: crypto.randomUUID(),
-    type: 'RELEASE',
-    itemType: 'Service',
-    itemName: serviceLabel,
-    quantityChange: -1,
-    unitPriceAtTime: quotedAmount,
-    totalValue: quotedAmount,
-    timestamp,
-    recipient: row.full_name,
-    personId: person.id,
-    vehicleId: vehicle?.id ?? null,
-    note: noteParts.join(' · '),
-    modeOfPayment,
-    releasedBy: confirmedBy || null,
-    posLineItems: [
-      {
-        itemType: 'Service',
-        itemName: serviceLabel,
-        quantity: 1,
-        unitPrice: quotedAmount,
-        lineSubtotal: quotedAmount,
-      },
-    ],
-  };
-  if (modeOfPayment === 'Credit') {
-    txPayload.dueDays = dueDays;
-  }
-
-  const createdTx = await addTransaction(txPayload);
-
-  if (modeOfPayment !== 'Cash' && createdTx.recipient) {
-    try {
-      await syncReceivablesForRelease(createdTx, txPayload);
-    } catch (receivableErr) {
-      throw new Error(receivableErr?.message || 'Failed to create receivable for this booking.');
-    }
-  }
 
   const now = nowIso();
   bookings[index] = {
@@ -2119,13 +2206,44 @@ export async function confirmOnlineBooking(id, options = {}) {
     confirmed_by: confirmedBy || null,
     person_id: person.id,
     vehicle_id: vehicle?.id ?? null,
-    transaction_id: createdTx.id,
+    transaction_id: null,
     quoted_amount: quotedAmount,
     mode_of_payment: modeOfPayment,
     confirm_note: confirmNote || null,
+    due_days: modeOfPayment === 'Credit' ? dueDays : null,
   };
   await collectionsBackend.writeCollection(COLLECTIONS.onlineBookings, bookings);
-  return { booking: bookingToApi(bookings[index]), transaction: createdTx, person, vehicle };
+  return { booking: bookingToApi(bookings[index]), person, vehicle };
+}
+
+/** Link a POS sale to a confirmed booking after staff completes checkout. */
+export async function completeOnlineBookingPosTransfer(id, transactionId, options = {}) {
+  const txId = String(transactionId || '').trim();
+  if (!txId) throw new Error('Transaction id is required.');
+
+  const bookings = await collectionsBackend.readCollection(COLLECTIONS.onlineBookings, []);
+  const index = bookings.findIndex((b) => b.id === id);
+  if (index === -1) throw new Error('Booking not found.');
+  const row = bookings[index];
+  if (String(row.status) !== 'confirmed') {
+    throw new Error('Only confirmed bookings can be linked to a POS sale.');
+  }
+  if (row.transaction_id || row.transactionId) {
+    throw new Error('This booking is already linked to a sale.');
+  }
+
+  const tx = await getTransactionById(txId);
+  if (!tx) throw new Error('Sale transaction not found.');
+
+  const now = nowIso();
+  bookings[index] = {
+    ...row,
+    transaction_id: txId,
+    updated_at: now,
+    confirmed_by: options.completedBy ? String(options.completedBy).trim() : row.confirmed_by ?? row.confirmedBy,
+  };
+  await collectionsBackend.writeCollection(COLLECTIONS.onlineBookings, bookings);
+  return { booking: bookingToApi(bookings[index]), transaction: tx };
 }
 
 export async function cancelOnlineBooking(id, { cancelledBy, reason } = {}) {

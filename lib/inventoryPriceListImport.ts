@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { mergeIdenticalPriceListRows } from './inventoryMergeKey';
 
 export interface InventoryPriceListRow {
   itemCode: string;
@@ -133,7 +134,15 @@ export function parseInventoryPriceListBuffer(buffer: ArrayBuffer): InventoryPri
   }
 
   if (!rows.length) warnings.push('No inventory rows found after the header row.');
-  return { rows, sheetName, warnings };
+
+  const { rows: mergedRows, mergedCount } = mergeIdenticalPriceListRows(rows);
+  if (mergedCount > 0) {
+    warnings.push(
+      `Merged ${mergedCount} duplicate row(s) with identical code, name, type, brand, UOM, and prices into one stock line each.`
+    );
+  }
+
+  return { rows: mergedRows, sheetName, warnings };
 }
 
 export async function parseInventoryPriceListFile(file: File): Promise<InventoryPriceListParseResult> {
