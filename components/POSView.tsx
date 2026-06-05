@@ -16,7 +16,15 @@ import {
   saveBillingLetterhead,
   loadBillingPrePrintedFormPreference,
   saveBillingPrePrintedFormPreference,
+  loadPrePrintedInvoiceNumber,
+  savePrePrintedInvoiceNumber,
+  loadPrePrintedCustomerTin,
+  savePrePrintedCustomerTin,
+  loadPrePrintedCustomerAddress,
+  savePrePrintedCustomerAddress,
 } from '../lib/billingLetterhead';
+import { loadOverlayCalibration } from '../lib/prePrintedReceiptOverlay';
+import { PrePrintedOverlayCalibrationPanel } from './PrePrintedOverlayCalibration';
 import {
   BILLING_VAT_RATE,
   billingLineRowsFromPosCart,
@@ -114,6 +122,10 @@ export const POSView: React.FC<POSViewProps> = ({
   const [bhAddress, setBhAddress] = useState('');
   const [bhShowVat, setBhShowVat] = useState(false);
   const [bhPrePrintedForm, setBhPrePrintedForm] = useState(false);
+  const [bhInvoiceNumber, setBhInvoiceNumber] = useState('');
+  const [bhCustomerTin, setBhCustomerTin] = useState('');
+  const [bhCustomerAddress, setBhCustomerAddress] = useState('');
+  const [overlayCalibration, setOverlayCalibration] = useState(loadOverlayCalibration);
 
   const activeDraftItem = items.find((i) => i.id === selectedItemId);
   const vehiclesForPerson = selectedPersonId ? vehicles.filter((v) => v.personId === selectedPersonId) : [];
@@ -157,6 +169,10 @@ export const POSView: React.FC<POSViewProps> = ({
     setBhTin(h.tin);
     setBhAddress(h.businessAddress);
     setBhPrePrintedForm(loadBillingPrePrintedFormPreference());
+    setBhInvoiceNumber(loadPrePrintedInvoiceNumber());
+    setBhCustomerTin(loadPrePrintedCustomerTin());
+    setBhCustomerAddress(loadPrePrintedCustomerAddress());
+    setOverlayCalibration(loadOverlayCalibration());
   }, []);
 
   const subtotal = useMemo(() => round2(cart.reduce((s, l) => s + lineGross(l), 0)), [cart]);
@@ -494,10 +510,14 @@ export const POSView: React.FC<POSViewProps> = ({
         const transaction = tx as Transaction;
         onSaleComplete?.();
         saveBillingLetterhead(billingLetterhead);
+        savePrePrintedInvoiceNumber(bhInvoiceNumber);
+        savePrePrintedCustomerTin(bhCustomerTin);
+        savePrePrintedCustomerAddress(bhCustomerAddress);
         const billingHtml = buildTransactionBillingStatementHtml(
           transaction,
           billingLetterhead,
-          billingPrintOptions
+          billingPrintOptions,
+          billingOverlayExtras
         );
         const receiptDoc = {
           html: buildReceiptHtml(transaction),
@@ -565,9 +585,24 @@ export const POSView: React.FC<POSViewProps> = ({
       showVatBreakdown: bhShowVat,
       vatRatePercent: BILLING_VAT_RATE,
       prePrintedForm: bhPrePrintedForm,
+      overlayCalibration,
     }),
-    [bhShowVat, bhPrePrintedForm]
+    [bhShowVat, bhPrePrintedForm, overlayCalibration]
   );
+
+  const billingOverlayExtras = useMemo(
+    () => ({
+      invoiceNumber: bhInvoiceNumber.trim() || undefined,
+      customerTin: bhCustomerTin.trim() || undefined,
+      customerAddress: bhCustomerAddress.trim() || undefined,
+    }),
+    [bhInvoiceNumber, bhCustomerTin, bhCustomerAddress]
+  );
+
+  const isChargeSaleForPrint =
+    paymentType === 'Accounts Receivable' ||
+    paymentType === 'Purchase Order' ||
+    paymentType === 'Cheque';
 
   const printPosBillingFromCart = () => {
     setError(null);
@@ -580,6 +615,9 @@ export const POSView: React.FC<POSViewProps> = ({
       return;
     }
     saveBillingLetterhead(billingLetterhead);
+    savePrePrintedInvoiceNumber(bhInvoiceNumber);
+    savePrePrintedCustomerTin(bhCustomerTin);
+    savePrePrintedCustomerAddress(bhCustomerAddress);
     const lineRows = billingLineRowsFromPosCart(
       cart.map((l) => ({
         name: l.name,
@@ -600,6 +638,10 @@ export const POSView: React.FC<POSViewProps> = ({
         footerRef: refPart,
         footerDate: formatDateInputForDisplay(transactionDate),
         customerName: customerLabel || undefined,
+        customerTin: billingOverlayExtras.customerTin,
+        customerAddress: billingOverlayExtras.customerAddress,
+        invoiceNumber: billingOverlayExtras.invoiceNumber,
+        isChargeSale: isChargeSaleForPrint,
         documentDate: formatDateInputForDisplay(transactionDate),
       },
       billingLetterhead,
@@ -615,10 +657,14 @@ export const POSView: React.FC<POSViewProps> = ({
   const printPosBillingLastSale = () => {
     if (!lastSaleForBilling) return;
     saveBillingLetterhead(billingLetterhead);
+    savePrePrintedInvoiceNumber(bhInvoiceNumber);
+    savePrePrintedCustomerTin(bhCustomerTin);
+    savePrePrintedCustomerAddress(bhCustomerAddress);
     const html = buildTransactionBillingStatementHtml(
       lastSaleForBilling,
       billingLetterhead,
-      billingPrintOptions
+      billingPrintOptions,
+      billingOverlayExtras
     );
     openDocumentPreview({
       html,
@@ -1323,11 +1369,90 @@ export const POSView: React.FC<POSViewProps> = ({
               className="mt-0.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
             />
             <span className="text-slate-700 text-xs leading-snug">
-              Pre-printed BIR form overlay (≤ 9 items): print only customer name, item rows, and totals so they
-              line up with the pre-printed paper. Sales with more than 9 items print the full statement
-              automatically.
+              Pre-printed BIR invoice overlay (≤ 9 items): prints only dynamic values positioned on your physical
+              Motor World invoice booklet. Load the pre-printed paper first — no letterhead or borders are printed.
             </span>
           </label>
+
+          {bhPrePrintedForm && (
+            <div className="space-y-3 rounded-lg border border-emerald-100 bg-emerald-50/40 p-3">
+              <p className="text-xs font-semibold text-emerald-900">Overlay fields (SOLD TO + invoice)</p>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Invoice serial №</label>
+                <input
+                  type="text"
+                  className="w-full px-2.5 py-1.5 text-sm border border-slate-200 rounded-lg font-mono"
+                  value={bhInvoiceNumber}
+                  onChange={(e) => setBhInvoiceNumber(e.target.value)}
+                  placeholder="e.g. 000152"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Customer TIN (SOLD TO)</label>
+                <input
+                  type="text"
+                  className="w-full px-2.5 py-1.5 text-sm border border-slate-200 rounded-lg"
+                  value={bhCustomerTin}
+                  onChange={(e) => setBhCustomerTin(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Customer address (SOLD TO)</label>
+                <input
+                  type="text"
+                  className="w-full px-2.5 py-1.5 text-sm border border-slate-200 rounded-lg"
+                  value={bhCustomerAddress}
+                  onChange={(e) => setBhCustomerAddress(e.target.value)}
+                />
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Cash / Charge checkbox follows payment type. Customer name comes from the POS customer field.
+              </p>
+              <PrePrintedOverlayCalibrationPanel
+                value={overlayCalibration}
+                onChange={setOverlayCalibration}
+                onPreview={() => {
+                  if (cart.length === 0) {
+                    setError('Add cart lines to preview the overlay.');
+                    return;
+                  }
+                  const lineRows = billingLineRowsFromPosCart(
+                    cart.map((l) => ({
+                      name: l.name,
+                      itemType: l.itemType,
+                      qty: l.qty,
+                      unitPrice: l.unitPrice,
+                      discountPerUnit: l.discountPerUnit > 0 ? l.discountPerUnit : undefined,
+                    }))
+                  );
+                  const customerLabel = selectedPersonId
+                    ? persons.find((p) => p.id === selectedPersonId)?.fullName?.trim()
+                    : customerInput.trim();
+                  const html = buildBillingStatementHtml(
+                    {
+                      lineRows,
+                      totalDue: grandTotal,
+                      footerRef: 'Overlay preview',
+                      footerDate: formatDateInputForDisplay(transactionDate),
+                      customerName: customerLabel || 'Sample customer',
+                      customerTin: bhCustomerTin.trim() || undefined,
+                      customerAddress: bhCustomerAddress.trim() || undefined,
+                      invoiceNumber: bhInvoiceNumber.trim() || undefined,
+                      isChargeSale: isChargeSaleForPrint,
+                      documentDate: formatDateInputForDisplay(transactionDate),
+                    },
+                    billingLetterhead,
+                    { ...billingPrintOptions, overlayPreview: true }
+                  );
+                  openDocumentPreview({
+                    html,
+                    title: 'Pre-printed overlay preview',
+                    filename: 'overlay-preview.pdf',
+                  });
+                }}
+              />
+            </div>
+          )}
 
           <button
             type="button"

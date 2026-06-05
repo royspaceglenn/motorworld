@@ -1,5 +1,11 @@
 import type { Transaction } from '../types';
 import type { BillingLetterhead } from './billingLetterhead';
+import {
+  buildPrePrintedOverlayHtml,
+  type PrePrintedOverlayCalibration,
+  type PrePrintedOverlayData,
+  DEFAULT_OVERLAY_CALIBRATION,
+} from './prePrintedReceiptOverlay';
 
 export const BILLING_LINES_PER_PAGE = 9;
 /** Default PH VAT rate when showing inclusive breakdown. */
@@ -157,6 +163,10 @@ export interface BuildTransactionBillingHtmlOptions {
    * lines), the full letterhead billing statement is produced instead.
    */
   prePrintedForm?: boolean;
+  /** Millimeter shift for pre-printed overlay alignment (per printer). */
+  overlayCalibration?: PrePrintedOverlayCalibration;
+  /** Preview overlay with dashed field guides (screen only). */
+  overlayPreview?: boolean;
 }
 
 function computeVatBreakdown(totalVatInclusive: number, vatRatePercent: number) {
@@ -178,6 +188,14 @@ export interface BillingStatementBodyInput {
   footerDate: string;
   /** Customer / "Sold To" name — used in pre-printed BIR form fill mode. */
   customerName?: string;
+  /** Customer TIN on SOLD TO line (pre-printed overlay). */
+  customerTin?: string;
+  /** Customer business address on SOLD TO line (pre-printed overlay). */
+  customerAddress?: string;
+  /** Serial on pre-printed invoice (e.g. 000152). */
+  invoiceNumber?: string;
+  /** Charge vs cash — marks the correct checkbox on the physical form. */
+  isChargeSale?: boolean;
   /** Document date — used in pre-printed BIR form fill mode. Falls back to footerDate. */
   documentDate?: string;
 }
@@ -382,11 +400,24 @@ export function buildBillingStatementHtml(
  * (Motor World style) — you may need to tweak the offsets below by ±1-2 mm
  * to match your specific printer / paper combination.
  */
+/** Format a number as plain "1,234.56" — no currency prefix (the form pre-prints the unit). */
+function formatNumberOnly(n: number): string {
+  const v = roundMoney(n);
+  const neg = v < 0;
+  const abs = Math.abs(v);
+  const parts = abs.toFixed(2).split('.');
+  const intPart = parts[0]!.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `${neg ? '−' : ''}${intPart}.${parts[1]}`;
+}
+
+function escapeOverlayText(s: string): string {
+  return escapeHtml(s);
+}
+
 export function buildPrePrintedFormFillHtml(
   body: BillingStatementBodyInput,
   options: BuildTransactionBillingHtmlOptions
 ): string {
-  // Partition rows into actual item lines vs. discount / adjustment lines.
   const itemRows = body.lineRows.filter((r) => !isAdjustmentRow(r));
   const discountRows = body.lineRows.filter(isAdjustmentRow);
   const discountAmount = roundMoney(
@@ -400,188 +431,59 @@ export function buildPrePrintedFormFillHtml(
   const vatRate = options.vatRatePercent ?? BILLING_VAT_RATE;
   const vat = options.showVatBreakdown ? computeVatBreakdown(totalDue, vatRate) : null;
 
-  // Field positions on A4 portrait (210 × 297 mm). Tweak the constants here
-  // if your pre-printed paper's positions differ.
-  const FIELDS = {
-    date: { left: 142, top: 36, width: 50 },
-    soldToRegisteredName: { left: 50, top: 60, width: 130 },
-    soldToBusinessAddress: { left: 50, top: 80, width: 130 },
-    table: {
-      // Top of the first row's text baseline.
-      topFirstRow: 100,
-      // Vertical advance between row text baselines.
-      rowAdvance: 9,
-      cols: {
-        desc: { left: 14, width: 72 },
-        qty: { left: 88, width: 18, align: 'center' as const },
-        price: { left: 110, width: 32, align: 'right' as const },
-        amount: { left: 154, width: 38, align: 'right' as const },
-      },
-    },
-    totals: {
-      // Right edge of the totals values column.
-      rightEdge: 196,
-      // Width of the totals value box.
-      width: 44,
-      // Vertical positions of each totals slot.
-      totalSalesVatInclusive: 180,
-      lessVat: 188,
-      netOfVat: 195,
-      lessDiscount: 203,
-      addVat: 211,
-      lessWithholdingTax: 219,
-      totalAmountDue: 232,
-    },
-  };
-
   const dateValue =
     body.documentDate?.trim() ||
     body.footerDate?.trim() ||
     new Date().toLocaleDateString();
 
-  const customerName = (body.customerName || '').trim();
+  const overlayLines = itemRows.slice(0, BILLING_LINES_PER_PAGE).map((row) => {
+    const qtyMatch = String(row.description).match(/—\s*Qty\s+(\d+(?:\.\d+)?)$/i);
+    const qty = qtyMatch ? qtyMatch[1]! : '1';
+    const desc = row.description.replace(/\s*—\s*Qty\s+\d+(?:\.\d+)?$/i, '');
+    return {
+      description: escapeOverlayText(desc),
+      qty: escapeOverlayText(qty),
+      unitPrice: row.unitPrice ? formatNumberOnly(row.unitPrice) : '',
+      amount: formatNumberOnly(row.amount),
+    };
+  });
 
-  const itemRowHtml = itemRows
-    .slice(0, BILLING_LINES_PER_PAGE)
-    .map((row, i) => {
-      const top = FIELDS.table.topFirstRow + i * FIELDS.table.rowAdvance;
-      const c = FIELDS.table.cols;
-      const qtyMatch = String(row.description).match(/—\s*Qty\s+(\d+(?:\.\d+)?)$/i);
-      const qty = qtyMatch ? qtyMatch[1] : '';
-      const desc = row.description.replace(/\s*—\s*Qty\s+\d+(?:\.\d+)?$/i, '');
-      return [
-        positioned(c.desc.left, top, c.desc.width, 'left', escapeHtml(desc)),
-        positioned(c.qty.left, top, c.qty.width, c.qty.align, escapeHtml(qty)),
-        positioned(
-          c.price.left,
-          top,
-          c.price.width,
-          c.price.align,
-          row.unitPrice ? formatNumberOnly(row.unitPrice) : ''
-        ),
-        positioned(
-          c.amount.left,
-          top,
-          c.amount.width,
-          c.amount.align,
-          formatNumberOnly(row.amount)
-        ),
-      ].join('');
-    })
-    .join('');
+  const overlayData: PrePrintedOverlayData = {
+    invoiceNumber: body.invoiceNumber ? escapeOverlayText(body.invoiceNumber) : undefined,
+    date: escapeOverlayText(dateValue),
+    isChargeSale: body.isChargeSale ?? false,
+    soldToName: escapeOverlayText((body.customerName || '').trim()),
+    soldToTin: body.customerTin ? escapeOverlayText(body.customerTin) : undefined,
+    soldToAddress: body.customerAddress ? escapeOverlayText(body.customerAddress) : undefined,
+    lines: overlayLines,
+    totalSalesVatInclusive: formatNumberOnly(vat ? vat.totalSalesVatInclusive : subtotalBeforeDiscount || totalDue),
+    lessVat: vat ? formatNumberOnly(vat.vatAmount) : undefined,
+    netOfVat: vat ? formatNumberOnly(vat.netOfVat) : undefined,
+    lessDiscount: discountAmount > 0 ? formatNumberOnly(discountAmount) : undefined,
+    totalAmountDue: formatNumberOnly(totalDue),
+    vatableSales: vat ? formatNumberOnly(vat.netOfVat) : undefined,
+    vatAmount: vat ? formatNumberOnly(vat.vatAmount) : undefined,
+    zeroRatedSales: vat ? formatNumberOnly(0) : undefined,
+    vatExemptSales: vat ? formatNumberOnly(0) : undefined,
+  };
 
-  const totalsHtml = [
-    positioned(
-      FIELDS.totals.rightEdge - FIELDS.totals.width,
-      FIELDS.totals.totalSalesVatInclusive,
-      FIELDS.totals.width,
-      'right',
-      formatNumberOnly(vat ? vat.totalSalesVatInclusive : subtotalBeforeDiscount || totalDue)
-    ),
-    vat
-      ? positioned(
-          FIELDS.totals.rightEdge - FIELDS.totals.width,
-          FIELDS.totals.lessVat,
-          FIELDS.totals.width,
-          'right',
-          formatNumberOnly(vat.vatAmount)
-        )
-      : '',
-    vat
-      ? positioned(
-          FIELDS.totals.rightEdge - FIELDS.totals.width,
-          FIELDS.totals.netOfVat,
-          FIELDS.totals.width,
-          'right',
-          formatNumberOnly(vat.netOfVat)
-        )
-      : '',
-    discountAmount > 0
-      ? positioned(
-          FIELDS.totals.rightEdge - FIELDS.totals.width,
-          FIELDS.totals.lessDiscount,
-          FIELDS.totals.width,
-          'right',
-          formatNumberOnly(discountAmount)
-        )
-      : '',
-    positioned(
-      FIELDS.totals.rightEdge - FIELDS.totals.width,
-      FIELDS.totals.totalAmountDue,
-      FIELDS.totals.width,
-      'right',
-      formatNumberOnly(totalDue),
-      { bold: true }
-    ),
-  ].join('');
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8"/>
-  <title>Billing Statement (overlay)</title>
-  <style>
-    @page { size: A4 portrait; margin: 0; }
-    * { box-sizing: border-box; }
-    html, body {
-      margin: 0;
-      padding: 0;
-      width: 210mm;
-      height: 297mm;
-      font-family: Arial, Helvetica, sans-serif;
-      font-size: 11px;
-      color: #000;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-      background: #fff;
-    }
-    .fld {
-      position: absolute;
-      font-variant-numeric: tabular-nums;
-      white-space: nowrap;
-      overflow: hidden;
-      line-height: 1;
-    }
-    .fld.bold { font-weight: 700; }
-    .fld.center { text-align: center; }
-    .fld.right { text-align: right; }
-  </style>
-</head>
-<body>
-  ${positioned(FIELDS.date.left, FIELDS.date.top, FIELDS.date.width, 'left', escapeHtml(dateValue))}
-  ${positioned(FIELDS.soldToRegisteredName.left, FIELDS.soldToRegisteredName.top, FIELDS.soldToRegisteredName.width, 'left', escapeHtml(customerName))}
-  ${itemRowHtml}
-  ${totalsHtml}
-</body>
-</html>`;
+  const cal = options.overlayCalibration ?? DEFAULT_OVERLAY_CALIBRATION;
+  return buildPrePrintedOverlayHtml(overlayData, cal, { preview: options.overlayPreview });
 }
 
-/** Format a number as plain "1,234.56" — no currency prefix (the form pre-prints the unit). */
-function formatNumberOnly(n: number): string {
-  const v = roundMoney(n);
-  const neg = v < 0;
-  const abs = Math.abs(v);
-  const parts = abs.toFixed(2).split('.');
-  const intPart = parts[0]!.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return `${neg ? '−' : ''}${intPart}.${parts[1]}`;
-}
-
-function positioned(
-  leftMm: number,
-  topMm: number,
-  widthMm: number,
-  align: 'left' | 'right' | 'center',
-  content: string,
-  opts?: { bold?: boolean }
-): string {
-  const cls = `fld${align === 'right' ? ' right' : align === 'center' ? ' center' : ''}${opts?.bold ? ' bold' : ''}`;
-  return `<div class="${cls}" style="left:${leftMm}mm;top:${topMm}mm;width:${widthMm}mm;">${content}</div>`;
+function transactionIsChargeSale(t: Transaction): boolean {
+  const m = String(t.modeOfPayment || 'Cash').trim();
+  return m !== 'Cash';
 }
 
 export function buildTransactionBillingStatementHtml(
   t: Transaction,
   letterhead: BillingLetterhead,
-  options: BuildTransactionBillingHtmlOptions
+  options: BuildTransactionBillingHtmlOptions,
+  extra?: Pick<
+    BillingStatementBodyInput,
+    'invoiceNumber' | 'customerTin' | 'customerAddress'
+  >
 ): string {
   return buildBillingStatementHtml(
     {
@@ -590,6 +492,10 @@ export function buildTransactionBillingStatementHtml(
       footerRef: `Transaction ${t.id.slice(0, 12)}`,
       footerDate: new Date(t.timestamp).toLocaleString(),
       customerName: t.recipient || undefined,
+      customerTin: extra?.customerTin,
+      customerAddress: extra?.customerAddress,
+      invoiceNumber: extra?.invoiceNumber,
+      isChargeSale: transactionIsChargeSale(t),
       documentDate: new Date(t.timestamp).toLocaleDateString(),
     },
     letterhead,

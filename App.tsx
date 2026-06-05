@@ -24,6 +24,7 @@ import { StatsCard } from './components/StatsCard';
 import { InventoryTable } from './components/InventoryTable';
 import { HistoryTable } from './components/HistoryTable';
 import { AddItemModal } from './components/AddItemModal';
+import { InventoryImportModal } from './components/InventoryImportModal';
 import { ReleaseModal } from './components/ReleaseModal';
 import { IssueModal } from './components/IssueModal';
 import { formatLowStockAlertThreshold, isLowStockItem } from './lib/inventoryPricing';
@@ -91,6 +92,7 @@ import {
   LogOut,
   CalendarClock,
   Wallet,
+  Upload,
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
@@ -138,6 +140,7 @@ const App: React.FC = () => {
 
   // Modals
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isReleaseModalOpen, setIsReleaseModalOpen] = useState(false);
   const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
   const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
@@ -435,6 +438,7 @@ const App: React.FC = () => {
     if (itemToEdit) {
       return itemsApi
         .update(itemToEdit.id, {
+          itemCode: itemData.itemCode ?? itemToEdit.itemCode,
           name: itemData.name ?? itemToEdit.name,
           brand: itemData.brand ?? itemToEdit.brand,
           category: itemData.category ?? itemToEdit.category,
@@ -459,6 +463,7 @@ const App: React.FC = () => {
     } else {
       return itemsApi
         .create({
+          itemCode: itemData.itemCode,
           name: itemData.name || 'New Item',
           brand: itemData.brand ?? '',
           category: itemData.category || 'Uncategorized',
@@ -1524,6 +1529,16 @@ const App: React.FC = () => {
                     <Printer className="w-4 h-4" />
                     Print List
                 </Button>
+                {canEdit && (
+                  <Button
+                    variant="secondary"
+                    onClick={() => setIsImportModalOpen(true)}
+                    className="whitespace-nowrap"
+                  >
+                    <Upload className="w-4 h-4" />
+                    Import price list
+                  </Button>
+                )}
                </div>
              </DashboardSurface>
 
@@ -1667,6 +1682,16 @@ const App: React.FC = () => {
         onSave={handleSaveItem}
         editItem={itemToEdit}
         existingItems={items}
+      />
+
+      <InventoryImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onImported={(importedItems) => {
+          setItems(importedItems.map((i) => normalizeItem(i)));
+          fetchItemsAndTransactions();
+          setIsImportModalOpen(false);
+        }}
       />
 
       <ReleaseModal 

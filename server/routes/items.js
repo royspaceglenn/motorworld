@@ -6,6 +6,7 @@ import {
   deleteItem,
   getAllItems,
   getItemById,
+  importInventoryPriceList,
   updateItem,
 } from '../db/store.js';
 import { logActivity } from '../services/activityLogger.js';
@@ -79,6 +80,38 @@ router.put('/:id', requireAdmin, async (req, res) => {
   await notifyAdminsAboutAction(req.user, 'EDIT_ITEM', `edited item: ${updated.name}`);
   scheduleViewerSync();
   return res.json(updated);
+});
+
+router.post('/import-price-list', requireAdmin, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const rows = Array.isArray(body.rows) ? body.rows : [];
+    if (!rows.length) {
+      return res.status(400).json({ error: 'No rows to import. Upload a price list Excel file first.' });
+    }
+    const result = await importInventoryPriceList(rows, {
+      mode: body.mode === 'createOnly' ? 'createOnly' : 'upsert',
+      sourceLabel: body.sourceLabel ? String(body.sourceLabel) : 'Inventory price list import',
+    });
+    await logActivity(req.user.id, 'IMPORT_INVENTORY_PRICE_LIST', {
+      created: result.created,
+      updated: result.updated,
+      skipped: result.skipped,
+      errors: result.errors.length,
+    });
+    await notifyAdminsAboutAction(
+      req.user,
+      'IMPORT_INVENTORY_PRICE_LIST',
+      `imported inventory price list (${result.created} new, ${result.updated} updated)`
+    );
+    scheduleViewerSync();
+    return res.json({
+      ...result,
+      items: await getAllItems(),
+    });
+  } catch (e) {
+    return res.status(500).json({ error: e?.message || 'Import failed.' });
+  }
 });
 
 router.delete('/:id', requireAdmin, async (req, res) => {

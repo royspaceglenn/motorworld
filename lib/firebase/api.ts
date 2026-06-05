@@ -364,6 +364,9 @@ export const itemsApi = {
     const db = dbOrThrow();
     await deleteDoc(getShopDoc(db, FIRESTORE_COLLECTIONS.items, id));
   },
+  importPriceList: async () => {
+    throw new Error('Inventory price list import requires the REST API backend, not Firebase.');
+  },
 };
 
 export const transactionsApi = {

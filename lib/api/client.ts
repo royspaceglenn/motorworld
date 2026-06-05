@@ -450,6 +450,28 @@ export const itemsApi = {
   update: (id: string, payload: Partial<InventoryItemApi>) =>
     request<InventoryItemApi>(`/api/items/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
   delete: (id: string) => request<{ success: boolean }>(`/api/items/${id}`, { method: 'DELETE' }),
+  importPriceList: (payload: {
+    rows: Array<{
+      itemCode: string;
+      productType?: string;
+      productName: string;
+      brand?: string;
+      uom?: string;
+      beginningStock?: number;
+      unitCost?: number;
+      srpPrice?: number;
+      sourceRow?: number;
+    }>;
+    mode?: 'upsert' | 'createOnly';
+    sourceLabel?: string;
+  }) =>
+    request<{
+      created: number;
+      updated: number;
+      skipped: number;
+      errors: string[];
+      items: InventoryItemApi[];
+    }>('/api/items/import-price-list', { method: 'POST', body: JSON.stringify(payload) }),
 };
 
 export const transactionsApi = {

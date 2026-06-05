@@ -96,3 +96,61 @@ export function saveBillingPrePrintedFormPreference(enabled: boolean): void {
     /* ignore quota / private mode */
   }
 }
+
+const INVOICE_NO_KEY = 'mw_preprinted_invoice_no';
+const CUSTOMER_TIN_KEY = 'mw_preprinted_customer_tin';
+const CUSTOMER_ADDR_KEY = 'mw_preprinted_customer_address';
+
+export function loadPrePrintedInvoiceNumber(): string {
+  try {
+    return localStorage.getItem(INVOICE_NO_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+export function savePrePrintedInvoiceNumber(value: string): void {
+  try {
+    const v = value.trim();
+    if (v) localStorage.setItem(INVOICE_NO_KEY, v);
+    else localStorage.removeItem(INVOICE_NO_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function loadPrePrintedCustomerTin(): string {
+  try {
+    return localStorage.getItem(CUSTOMER_TIN_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+export function savePrePrintedCustomerTin(value: string): void {
+  try {
+    const v = value.trim();
+    if (v) localStorage.setItem(CUSTOMER_TIN_KEY, v);
+    else localStorage.removeItem(CUSTOMER_TIN_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function loadPrePrintedCustomerAddress(): string {
+  try {
+    return localStorage.getItem(CUSTOMER_ADDR_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+export function savePrePrintedCustomerAddress(value: string): void {
+  try {
+    const v = value.trim();
+    if (v) localStorage.setItem(CUSTOMER_ADDR_KEY, v);
+    else localStorage.removeItem(CUSTOMER_ADDR_KEY);
+  } catch {
+    /* ignore */
+  }
+}

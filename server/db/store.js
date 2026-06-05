@@ -763,6 +763,132 @@ export async function deleteItem(id) {
   return true;
 }
 
+function findItemRowByCode(items, itemCode) {
+  const code = normalizeString(itemCode).toUpperCase();
+  if (!code) return null;
+  return (
+    items.find((entry) => normalizeString(entry.item_code ?? entry.itemCode).toUpperCase() === code) ?? null
+  );
+}
+
+async function postItemAdditionFromImport(item, note) {
+  if (Number(item.quantity) <= 0) return;
+  const cap = Number(item.capitalPrice ?? item.unitPrice ?? 0);
+  await addTransaction({
+    id: crypto.randomUUID(),
+    itemId: item.id,
+    itemName: item.name,
+    type: 'ADDITION',
+    quantityChange: Number(item.quantity),
+    unitPriceAtTime: cap,
+    sellingPriceAtTime: Number(item.unitPrice ?? 0),
+    totalValue: Number(item.quantity) * cap,
+    timestamp: item.createdAt ?? item.lastUpdated ?? nowIso(),
+    note: note || 'Price list import',
+    itemType: 'Product',
+  });
+}
+
+async function postItemQuantityAdjustmentFromImport(item, previousQty, note) {
+  const delta = Number(item.quantity) - Number(previousQty);
+  if (!delta) return;
+  const cap = Number(item.capitalPrice ?? item.unitPrice ?? 0);
+  await addTransaction({
+    id: crypto.randomUUID(),
+    itemId: item.id,
+    itemName: item.name,
+    type: 'ADJUSTMENT',
+    quantityChange: delta,
+    unitPriceAtTime: cap,
+    totalValue: delta * cap,
+    timestamp: item.lastUpdated ?? nowIso(),
+    note: note || 'Price list import stock update',
+    itemType: 'Product',
+  });
+}
+
+/**
+ * Bulk import from Motor World–style inventory price list spreadsheets.
+ * mode: upsert (default) updates existing item codes; createOnly skips duplicates.
+ */
+export async function importInventoryPriceList(rows, options = {}) {
+  const mode = options.mode === 'createOnly' ? 'createOnly' : 'upsert';
+  const sourceLabel = String(options.sourceLabel || 'Inventory price list import').trim();
+  const list = Array.isArray(rows) ? rows : [];
+  const results = { created: 0, updated: 0, skipped: 0, errors: [] };
+
+  for (const raw of list) {
+    const itemCode = normalizeString(raw.itemCode ?? raw.item_code).toUpperCase();
+    const name = String(raw.productName ?? raw.name ?? '').trim();
+    const category = String(raw.productType ?? raw.category ?? 'Uncategorized').trim() || 'Uncategorized';
+    const brand = String(raw.brand ?? '').trim();
+    const unit = String(raw.uom ?? raw.unit ?? 'pcs').trim() || 'pcs';
+    const quantity = Math.max(0, normalizeNumber(raw.beginningStock ?? raw.quantity));
+    const unitPrice = Math.max(0, normalizeNumber(raw.srpPrice ?? raw.unitPrice ?? raw.unit_price));
+    const capitalPrice = Math.max(0, normalizeNumber(raw.unitCost ?? raw.capitalPrice ?? raw.capital_price ?? unitPrice));
+    const rowLabel = raw.sourceRow ? `Row ${raw.sourceRow}` : itemCode || 'row';
+
+    if (!itemCode) {
+      results.errors.push(`${rowLabel}: missing item code.`);
+      continue;
+    }
+    if (!name) {
+      results.errors.push(`${rowLabel}: missing product name.`);
+      continue;
+    }
+
+    try {
+      const allRows = await collectionsBackend.readCollection(COLLECTIONS.items, []);
+      const existingRow = findItemRowByCode(allRows, itemCode);
+
+      if (existingRow) {
+        if (mode === 'createOnly') {
+          results.skipped += 1;
+          continue;
+        }
+        const beforeQty = normalizeNumber(existingRow.quantity);
+        const updated = await updateItem(existingRow.id, {
+          name,
+          brand,
+          category,
+          unit,
+          quantity,
+          unitPrice,
+          capitalPrice,
+          description: existingRow.description || `${category} — ${brand}`.trim(),
+        });
+        if (!updated) {
+          results.errors.push(`${rowLabel}: could not update ${itemCode}.`);
+          continue;
+        }
+        await postItemQuantityAdjustmentFromImport(updated, beforeQty, sourceLabel);
+        results.updated += 1;
+        continue;
+      }
+
+      const created = await createItem({
+        itemCode,
+        name,
+        brand,
+        category,
+        unit,
+        quantity,
+        unitPrice,
+        capitalPrice,
+        description: `${category} — ${brand}`.replace(/ — $/, '').trim(),
+        minStockLevel: 0,
+        stockPurpose: 'for_sale',
+      });
+      await postItemAdditionFromImport(created, sourceLabel);
+      results.created += 1;
+    } catch (e) {
+      results.errors.push(`${rowLabel}: ${e?.message || 'import failed.'}`);
+    }
+  }
+
+  return results;
+}
+
 export async function getTransactions() {
   return (await collectionsBackend.readCollection(COLLECTIONS.transactions, []))
     .map(transactionToApi)
