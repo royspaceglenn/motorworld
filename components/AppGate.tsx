@@ -4,7 +4,8 @@ import { Login } from './Login';
 import App from '../App';
 import { USE_FIRESTORE_ADMIN_DATA } from '../lib/api/adminData';
 import { PublicLanding } from './PublicLanding';
-import { isOperationsAppPath } from '../lib/opsPath';
+import { PublicProductsPage } from './PublicProductsPage';
+import { isOperationsAppPath, isPublicProductsPath } from '../lib/opsPath';
 
 function subscribePath(cb: () => void) {
   window.addEventListener('popstate', cb);
@@ -28,6 +29,10 @@ export const AppGate: React.FC = () => {
     if (typeof window === 'undefined') return;
     return subscribePath(() => setPathRev((n) => n + 1));
   }, []);
+
+  if (typeof window !== 'undefined' && isPublicProductsPath()) {
+    return <PublicProductsPage />;
+  }
 
   if (typeof window !== 'undefined' && !isOperationsAppPath()) {
     return <PublicLanding />;

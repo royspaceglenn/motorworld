@@ -27,6 +27,7 @@ export const documentArchivesApi = data.documentArchivesApi;
 export const systemApi = data.systemApi;
 export const bookingsApi = data.bookingsApi;
 export const payrollApi = data.payrollApi;
+export const sr1ImportApi = rest.sr1ImportApi;
 
 export type {
   ApiUser,

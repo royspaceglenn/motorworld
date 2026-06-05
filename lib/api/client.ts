@@ -680,6 +680,23 @@ export const paymentJournalApi = {
     ),
 };
 
+export const sr1ImportApi = {
+  apply: (payload: {
+    sales: Record<string, unknown>[];
+    sourceFileName?: string;
+    skipDuplicates?: boolean;
+  }) =>
+    request<{
+      created: number;
+      skipped: number;
+      personsCreated: number;
+      vehiclesCreated: number;
+      stockUnitsDeducted: number;
+      transactionIds: string[];
+      errors: string[];
+    }>('/api/imports/sr1/apply', { method: 'POST', body: JSON.stringify(payload) }),
+};
+
 export const payrollApi = {
   listEmployees: () => request<{ employees: Employee[] }>('/api/payroll/employees'),
   createEmployee: (payload: Partial<Employee>) =>

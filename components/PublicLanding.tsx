@@ -23,9 +23,11 @@ import {
   Gauge,
   MapPin,
 } from 'lucide-react';
+import { fetchMotorWorldPublicProducts } from '../lib/publicCatalog';
+import { PUBLIC_PRODUCTS_PATH } from '../lib/opsPath';
 import { LandingBookingSection } from './LandingBookingSection';
 import { LandingHeroVideo } from './LandingHeroVideo';
-import { LandingProductsSection } from './LandingProductsSection';
+import { PublicSiteHeader } from './PublicSiteHeader';
 
 /** Services bento — mechanic / engine bay (Unsplash). */
 const SERVICE_MECHANIC_BG =
@@ -51,6 +53,10 @@ export const PublicLanding: React.FC = () => {
       : `https://${PUBLIC_SITE_HOST}${OPS_APP_PATH}`;
 
   useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.hash.replace(/^#/, '') === 'products') {
+      window.location.replace(PUBLIC_PRODUCTS_PATH);
+      return;
+    }
     const hash = (typeof window !== 'undefined' && window.location.hash) || '';
     const id = hash.replace(/^#/, '').trim();
     if (!id) return;
@@ -60,8 +66,19 @@ export const PublicLanding: React.FC = () => {
     return () => window.clearTimeout(t);
   }, []);
 
-  const navItem =
-    'text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-400 transition hover:text-white sm:text-xs';
+  useEffect(() => {
+    let cancelled = false;
+    fetchMotorWorldPublicProducts()
+      .then((rows) => {
+        if (!cancelled) setLiveProductCount(rows.length);
+      })
+      .catch(() => {
+        if (!cancelled) setLiveProductCount(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const sectionShell = 'scroll-mt-24 border-t border-white/10 bg-black/40 px-4 py-14 sm:px-6 lg:px-8';
   const h2 = 'text-2xl font-black uppercase tracking-tight text-white sm:text-3xl';
@@ -86,61 +103,7 @@ export const PublicLanding: React.FC = () => {
       />
 
       <div className="relative z-10">
-        {/* Header */}
-        <header className="sticky top-0 z-40 border-b border-white/10 bg-black/70 backdrop-blur-md">
-          <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
-            <a href="#" className="flex shrink-0 items-center gap-2 text-white" aria-label="Top of page">
-              <Wrench className="h-6 w-6 sm:h-7 sm:w-7" style={{ color: RED }} aria-hidden />
-              <span className="text-sm font-black uppercase tracking-[0.18em] sm:text-base">Motorworld</span>
-            </a>
-
-            <nav
-              className="hidden flex-1 justify-center gap-6 md:flex lg:gap-10"
-              aria-label="Primary"
-            >
-              <a className={navItem} href="#services">
-                Services
-              </a>
-              <a className={navItem} href="#products">
-                Products
-              </a>
-              <a className={navItem} href="#about">
-                About
-              </a>
-              <a className={navItem} href="#vision">
-                Vision
-              </a>
-              <a className={navItem} href="#faq">
-                FAQ
-              </a>
-            </nav>
-
-            <a
-              href="#booking"
-              className="shrink-0 rounded-sm px-3 py-2 text-center text-[10px] font-bold uppercase tracking-wide text-white shadow-lg transition hover:opacity-95 sm:px-5 sm:text-xs"
-              style={{ backgroundColor: RED }}
-            >
-              Book service
-            </a>
-          </div>
-          <div className="flex justify-center gap-4 overflow-x-auto border-t border-white/5 px-4 py-2 md:hidden">
-            <a className={`${navItem} whitespace-nowrap`} href="#services">
-              Services
-            </a>
-            <a className={`${navItem} whitespace-nowrap`} href="#products">
-              Products
-            </a>
-            <a className={`${navItem} whitespace-nowrap`} href="#about">
-              About
-            </a>
-            <a className={`${navItem} whitespace-nowrap`} href="#vision">
-              Vision
-            </a>
-            <a className={`${navItem} whitespace-nowrap`} href="#faq">
-              FAQ
-            </a>
-          </div>
-        </header>
+        <PublicSiteHeader active="home" />
 
         {/* Hero */}
         <section className="mx-auto max-w-7xl px-4 pb-16 pt-10 sm:px-6 sm:pt-14 lg:grid lg:grid-cols-2 lg:items-center lg:gap-10 lg:px-8 lg:pb-24">
@@ -171,7 +134,7 @@ export const PublicLanding: React.FC = () => {
                 <ArrowRight className="h-4 w-4" aria-hidden />
               </a>
               <a
-                href="#products"
+                href={PUBLIC_PRODUCTS_PATH}
                 className="inline-flex items-center gap-2 rounded-sm border-2 border-white/90 bg-transparent px-6 py-3 text-xs font-bold uppercase tracking-wide text-white transition hover:bg-white/10"
               >
                 View products
@@ -367,12 +330,6 @@ export const PublicLanding: React.FC = () => {
             </p>
           </div>
         </section>
-
-        <LandingProductsSection
-          sectionShell={sectionShell}
-          h2={h2}
-          onCountChange={setLiveProductCount}
-        />
 
         <section id="about" className={sectionShell}>
           <div className="mx-auto max-w-3xl space-y-6">

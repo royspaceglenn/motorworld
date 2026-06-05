@@ -9,6 +9,8 @@ interface LandingProductsSectionProps {
   sectionShell: string;
   h2: string;
   onCountChange?: (count: number) => void;
+  /** When true, render as main catalog content (used on `/products` page). */
+  standalone?: boolean;
 }
 
 function formatDisplayName(name: string): string {
@@ -86,6 +88,7 @@ export const LandingProductsSection: React.FC<LandingProductsSectionProps> = ({
   sectionShell,
   h2,
   onCountChange,
+  standalone = false,
 }) => {
   const [products, setProducts] = useState<PublicCatalogProduct[]>([]);
   const [loading, setLoading] = useState(true);
@@ -150,9 +153,14 @@ export const LandingProductsSection: React.FC<LandingProductsSectionProps> = ({
 
   const topCategories = categoryCounts.slice(0, 6);
 
+  const Wrapper = standalone ? 'div' : 'section';
+  const wrapperClass = standalone
+    ? 'mx-auto max-w-6xl'
+    : `${sectionShell}`.trim();
+
   return (
-    <section id="products" className={sectionShell}>
-      <div className="mx-auto max-w-6xl">
+    <Wrapper id={standalone ? undefined : 'products'} className={wrapperClass}>
+      <div className={standalone ? undefined : 'mx-auto max-w-6xl'}>
         <div className="max-w-3xl">
           <h2 className={h2}>Products</h2>
           <p className="mt-4 text-sm leading-relaxed text-zinc-400 sm:text-base">
@@ -319,6 +327,6 @@ export const LandingProductsSection: React.FC<LandingProductsSectionProps> = ({
           View updates on Facebook
         </a>
       </div>
-    </section>
+    </Wrapper>
   );
 };

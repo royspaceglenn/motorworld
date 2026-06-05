@@ -1497,7 +1497,20 @@ const App: React.FC = () => {
         {/* --- INVENTORY VIEW --- */}
         {view === 'sales_summary' && (
           <div>
-            <SalesSummaryReportView transactions={transactions} items={items} persons={persons} vehicles={vehicles} />
+            <SalesSummaryReportView
+              transactions={transactions}
+              items={items}
+              persons={persons}
+              vehicles={vehicles}
+              onDataImported={() => {
+                transactionsApi.list().then((res) => {
+                  if (res.transactions && Array.isArray(res.transactions)) setTransactions(res.transactions);
+                });
+                personsApi.list().then((res) => setPersons(res.persons ?? []));
+                vehiclesApi.list().then((res) => setVehicles(res.vehicles ?? []));
+                itemsApi.list().then((res) => setItems((res.items ?? []).map((i: any) => normalizeItem(i))));
+              }}
+            />
           </div>
         )}
         {view === 'billing_statement' && (

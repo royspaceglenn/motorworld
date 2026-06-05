@@ -16,7 +16,8 @@ import {
 } from '../lib/salesSummaryReport';
 import { DashboardSectionHeader, DashboardSurface } from './ui/DashboardPrimitives';
 import { Button } from './ui/Button';
-import { FileSpreadsheet, Loader2, Printer } from 'lucide-react';
+import { FileSpreadsheet, FileUp, Loader2, Printer } from 'lucide-react';
+import { Sr1ImportModal } from './Sr1ImportModal';
 
 function defaultMonthRangeYmd(): { start: string; end: string } {
   const d = new Date();
@@ -343,6 +344,7 @@ interface SalesSummaryReportViewProps {
   items: InventoryItem[];
   persons?: Person[];
   vehicles?: Vehicle[];
+  onDataImported?: () => void;
 }
 
 export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({
@@ -350,6 +352,7 @@ export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({
   items,
   persons = [],
   vehicles = [],
+  onDataImported,
 }) => {
   const defaults = useMemo(() => defaultMonthRangeYmd(), []);
   const [startDate, setStartDate] = useState(defaults.start);
@@ -357,6 +360,7 @@ export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [sr1ImportOpen, setSr1ImportOpen] = useState(false);
 
   const invalidRange = useMemo(() => {
     const ok = /^\d{4}-\d{2}-\d{2}$/.test(startDate) && /^\d{4}-\d{2}-\d{2}$/.test(endDate);
@@ -430,7 +434,7 @@ export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({
           eyebrow="Finance"
           title="Sales summary report"
           description={
-            'Choose any report date range. P&L totals below. SR-1 sales register lists every sale line (customer, vehicle, item, cost, price, discount) from system data. Print deposit report opens the landscape collection sheet.'
+            'Import SR-1.pdf to record historical sales in the system, or generate SR-1 from live POS data. P&L totals and printable deposit report below.'
           }
         />
 
@@ -468,6 +472,10 @@ export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({
               <FileSpreadsheet className="w-4 h-4 text-indigo-600 shrink-0" />
               {invalidRange ? '—' : summary?.periodLabel}
             </p>
+            <Button type="button" variant="primary" onClick={() => setSr1ImportOpen(true)}>
+              <FileUp className="w-4 h-4 mr-1.5" />
+              Import SR-1 PDF
+            </Button>
             <Button
               type="button"
               variant="secondary"
@@ -811,6 +819,12 @@ export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({
           </DashboardSurface>
         </>
       )}
+
+      <Sr1ImportModal
+        isOpen={sr1ImportOpen}
+        onClose={() => setSr1ImportOpen(false)}
+        onImported={() => onDataImported?.()}
+      />
     </div>
   );
 };

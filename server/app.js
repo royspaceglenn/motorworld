@@ -23,6 +23,7 @@ import documentArchivesRoutes from './routes/documentArchives.js';
 import publicCatalogRoutes from './routes/publicCatalog.js';
 import bookingsRoutes from './routes/bookings.js';
 import payrollRoutes from './routes/payroll.js';
+import sr1ImportRoutes from './routes/sr1Import.js';
 import { warmDatabaseConnection } from './db/collectionsBackend.js';
 import { ensureStoreInitialized } from './db/store.js';
 import { isEmergencyDbBypass } from './lib/emergencyAuth.js';
@@ -112,6 +113,7 @@ app.use('/api/suppliers', authMiddleware, shopScopeMiddleware, suppliersRoutes);
 app.use('/api/purchases', authMiddleware, shopScopeMiddleware, purchasesRoutes);
 app.use('/api/payment-journal', authMiddleware, shopScopeMiddleware, paymentJournalRoutes);
 app.use('/api/document-archives', authMiddleware, shopScopeMiddleware, documentArchivesRoutes);
+app.use('/api/imports/sr1', authMiddleware, shopScopeMiddleware, sr1ImportRoutes);
 
 // Global error handler so 500 responses return JSON with error message
 app.use((err, req, res, next) => {
