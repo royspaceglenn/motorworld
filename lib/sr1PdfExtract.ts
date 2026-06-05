@@ -12,7 +12,7 @@ export async function extractTextFromPdfFile(file: File): Promise<string> {
     throw new Error('The selected file is empty.');
   }
   if (!/\.pdf$/i.test(file.name) && file.type && file.type !== 'application/pdf') {
-    throw new Error('Please choose a PDF file (SR-1 sales register).');
+    throw new Error('Please choose a PDF sales register file.');
   }
 
   let pdfjs;
@@ -34,10 +34,30 @@ export async function extractTextFromPdfFile(file: File): Promise<string> {
   for (let i = 1; i <= doc.numPages; i++) {
     const page = await doc.getPage(i);
     const content = await page.getTextContent();
-    const pageText = content.items
-      .map((item) => ('str' in item ? String(item.str) : ''))
-      .join('');
-    pages.push(pageText);
+    const parts: string[] = [];
+    let lastY: number | null = null;
+
+    for (const item of content.items) {
+      if (!('str' in item)) continue;
+      const str = String(item.str || '');
+      if (!str) continue;
+
+      const y = Array.isArray(item.transform) ? Number(item.transform[5]) : null;
+      if (parts.length > 0) {
+        if (item.hasEOL) {
+          parts.push('\n');
+        } else if (lastY != null && y != null && Math.abs(y - lastY) > 4) {
+          parts.push('\n');
+        } else {
+          parts.push(' ');
+        }
+      }
+      parts.push(str);
+      if (y != null) lastY = y;
+      if (item.hasEOL) lastY = null;
+    }
+
+    pages.push(parts.join(''));
   }
   return pages.join('\n');
 }

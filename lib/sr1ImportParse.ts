@@ -1,6 +1,7 @@
 /**
- * Parse Motor World SR-1 sales register PDF text into structured sales + line items.
+ * Parse Motor World SR-1 / line-by-line sales register PDF text into structured sales + line items.
  */
+import { normalizeSalesRegisterPdfText } from './salesRegisterImport/normalizePdfText';
 
 const MONTHS =
   'January|February|March|April|May|June|July|August|September|October|November|December';
@@ -102,17 +103,45 @@ export interface Sr1ParseResult {
 }
 
 function stripPdfHeader(text: string): string {
-  const marker = text.indexOf('DISCOUNTJanuary');
-  if (marker >= 0) {
-    return text.slice(marker).replace(/^.*?DISCOUNT/i, '');
+  const normalized = normalizeSalesRegisterPdfText(text);
+  const discountIdx = normalized.search(
+    new RegExp(`DISCOUNT\\s*(?:${MONTHS})`, 'i')
+  );
+  if (discountIdx >= 0) {
+    const after = normalized.slice(discountIdx).replace(/^DISCOUNT\s*/i, '');
+    const dataStart = after.search(DATE_START_RE);
+    return dataStart >= 0 ? after.slice(dataStart) : after;
   }
-  const alt = text.search(DATE_START_RE);
-  return alt >= 0 ? text.slice(alt) : text;
+  const alt = normalized.search(DATE_START_RE);
+  return alt >= 0 ? normalized.slice(alt) : normalized;
 }
 
 function splitRows(text: string): string[] {
   const parts = text.split(new RegExp(`(?=(?:${MONTHS}) \\d{1,2}, \\d{4})`, 'i'));
-  return parts.map((p) => p.trim()).filter((p) => p.length > 40);
+  return parts.map((p) => p.trim()).filter((p) => p.length > 24);
+}
+
+function parseLinesGlobal(text: string): Sr1ParsedLine[] {
+  const normalized = normalizeSalesRegisterPdfText(text);
+  const tailRe = new RegExp(ROW_TAIL_RE.source, 'gi');
+  const dateRe = new RegExp(`((?:${MONTHS}) \\d{1,2}, \\d{4})`, 'gi');
+  const lines: Sr1ParsedLine[] = [];
+  let m: RegExpExecArray | null;
+
+  while ((m = tailRe.exec(normalized)) !== null) {
+    const end = m.index + m[0].length;
+    const before = normalized.slice(0, m.index);
+    let chunkStart = 0;
+    let dm: RegExpExecArray | null;
+    while ((dm = dateRe.exec(before)) !== null) {
+      chunkStart = dm.index;
+    }
+    const chunk = normalized.slice(chunkStart, end);
+    const line = parseLine(chunk);
+    if (line) lines.push(line);
+  }
+
+  return lines;
 }
 
 function parseHeadPrefix(head: string): Omit<
@@ -289,8 +318,8 @@ function extractDescription(rest: string, itemCode: string): string {
 }
 
 function parseLine(chunk: string): Sr1ParsedLine | null {
-  const tail = ROW_TAIL_RE.exec(chunk);
-  if (!tail) return null;
+  const tail = chunk.match(ROW_TAIL_RE);
+  if (!tail || tail.index == null) return null;
 
   const head = chunk.slice(0, tail.index);
   const prefix = parseHeadPrefix(head);
@@ -394,7 +423,7 @@ function groupLinesIntoSales(lines: Sr1ParsedLine[]): Sr1ParsedSale[] {
   return sales.sort((a, b) => new Date(a.saleDateIso).getTime() - new Date(b.saleDateIso).getTime());
 }
 
-export function parseSr1Text(text: string, fileName = 'SR-1.pdf'): Sr1ParseResult {
+export function parseSr1Text(text: string, fileName = 'register.pdf'): Sr1ParseResult {
   const cleaned = stripPdfHeader(text);
   const chunks = splitRows(cleaned);
   const warnings: string[] = [];
@@ -411,6 +440,14 @@ export function parseSr1Text(text: string, fileName = 'SR-1.pdf'): Sr1ParseResul
     lines.push(line);
   }
 
+  if (lines.length === 0) {
+    const globalLines = parseLinesGlobal(cleaned);
+    if (globalLines.length > 0) {
+      lines.push(...globalLines);
+      warnings.push('Used alternate row detection for this PDF layout.');
+    }
+  }
+
   const sales = groupLinesIntoSales(lines);
   const customers = [...new Set(sales.map((s) => s.customerName).filter((n) => n && n !== '—'))].sort();
   const ymds = sales.map((s) => parseSaleDateToYmd(s.saleDate)).filter(Boolean).sort();
@@ -418,7 +455,9 @@ export function parseSr1Text(text: string, fileName = 'SR-1.pdf'): Sr1ParseResul
     ymds.length > 0 ? { start: ymds[0], end: ymds[ymds.length - 1] } : null;
 
   if (lines.length === 0) {
-    warnings.push('No line items were parsed. Check that the file is a Motor World SR-1 sales register PDF.');
+    warnings.push(
+      'No sale lines were found. Try Auto-detect or Sales register (SR-1), or a different export PDF.'
+    );
   }
 
   return {

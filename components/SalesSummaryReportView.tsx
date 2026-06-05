@@ -434,7 +434,7 @@ export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({
           eyebrow="Finance"
           title="Sales summary report"
           description={
-            'Import SR-1.pdf to record historical sales in the system, or generate SR-1 from live POS data. P&L totals and printable deposit report below.'
+            'Import a sales register PDF (SR-1 and more) or generate SR-1 from live POS data. P&L totals and printable deposit report below.'
           }
         />
 
@@ -474,7 +474,7 @@ export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({
             </p>
             <Button type="button" variant="primary" onClick={() => setSr1ImportOpen(true)}>
               <FileUp className="w-4 h-4 mr-1.5" />
-              Import SR-1 PDF
+              Import register PDF
             </Button>
             <Button
               type="button"

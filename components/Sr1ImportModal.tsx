@@ -1,7 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { sr1ImportApi } from '../lib/api/adminData';
 import { extractTextFromPdfFile } from '../lib/sr1PdfExtract';
-import { parseSr1Text, type Sr1ParseResult } from '../lib/sr1ImportParse';
+import {
+  parseSalesRegisterText,
+  SALES_REGISTER_FORMAT_OPTIONS,
+  type SalesRegisterFormatId,
+  type SalesRegisterParseResult,
+} from '../lib/salesRegisterImport';
 import { Button } from './ui/Button';
 import { InlineAlert } from './ui/InlineAlert';
 import { CheckCircle2, FileUp, Loader2, Upload } from 'lucide-react';
@@ -33,7 +38,8 @@ function formatError(e: unknown, fallback: string): string {
 export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose, onImported }) => {
   const [step, setStep] = useState<ImportStep>('upload');
   const [fileName, setFileName] = useState('');
-  const [parsed, setParsed] = useState<Sr1ParseResult | null>(null);
+  const [formatId, setFormatId] = useState<SalesRegisterFormatId>('auto');
+  const [parsed, setParsed] = useState<SalesRegisterParseResult | null>(null);
   const [skipDuplicates, setSkipDuplicates] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +53,7 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
     setStep('upload');
     setFileName('');
     setParsed(null);
+    setFormatId('auto');
     setSkipDuplicates(true);
     setBusy(false);
     setError(null);
@@ -64,14 +71,17 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
     setFileName(file.name);
     try {
       const text = await extractTextFromPdfFile(file);
-      const res = parseSr1Text(text, file.name);
+      const res = parseSalesRegisterText(text, file.name, formatId);
       if (res.lineCount === 0) {
-        throw new Error('Could not read sale lines from this PDF. Use a Motor World SR-1 sales register export.');
+        const hint = SALES_REGISTER_FORMAT_OPTIONS.find((o) => o.id === formatId)?.hint ?? '';
+        throw new Error(
+          `Could not read sale lines from this PDF.${hint ? ` ${hint}` : ''} Try another format or export.`
+        );
       }
       setParsed(res);
       setStep('review');
     } catch (e) {
-      setError(formatError(e, 'Failed to read PDF. Try SR-1.pdf from Motor World exports.'));
+      setError(formatError(e, 'Failed to read PDF. Check the register format and try again.'));
     } finally {
       setBusy(false);
     }
@@ -85,6 +95,8 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
       const res = await sr1ImportApi.apply({
         sales: parsed.sales as unknown as Record<string, unknown>[],
         sourceFileName: fileName || parsed.fileName,
+        formatId: parsed.formatId,
+        formatLabel: parsed.formatLabel,
         skipDuplicates,
       });
       const msg = [
@@ -116,11 +128,11 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
       >
         <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
           <h2 id="sr1-import-title" className="text-lg font-semibold text-slate-900">
-            Import SR-1 sales register (PDF)
+            Import sales register (PDF)
           </h2>
           <p className="mt-1 text-sm text-slate-600">
-            Upload your <strong>SR-1.pdf</strong> to record historical sales, customers, vehicles, and line items in
-            the system. Re-uploading the same file skips duplicates when that option is on.
+            Upload a sales register PDF to record sales, customers, vehicles, and line items. SR-1 is supported today;
+            more register types can be added later. Re-uploading the same file skips duplicates when that option is on.
           </p>
           <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-wide">
             <span className={`rounded-full px-3 py-1 ${stepBadgeClass(step === 'upload', step !== 'upload')}`}>
@@ -138,10 +150,32 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
 
           {step === 'upload' && (
             <div className="space-y-4">
+              <div>
+                <label htmlFor="register-format" className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Register format
+                </label>
+                <select
+                  id="register-format"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                  value={formatId}
+                  onChange={(e) => setFormatId(e.target.value as SalesRegisterFormatId)}
+                  disabled={busy}
+                >
+                  {SALES_REGISTER_FORMAT_OPTIONS.filter((o) => o.available).map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1.5 text-xs text-slate-500">
+                  {SALES_REGISTER_FORMAT_OPTIONS.find((o) => o.id === formatId)?.hint}
+                </p>
+              </div>
+
               <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-6 py-12 transition hover:border-indigo-400 hover:bg-indigo-50/40">
                 <Upload className="mb-3 h-10 w-10 text-indigo-600" aria-hidden />
-                <span className="text-sm font-semibold text-slate-800">Choose SR-1.pdf</span>
-                <span className="mt-1 text-xs text-slate-500">Motor World sales register export</span>
+                <span className="text-sm font-semibold text-slate-800">Choose sales register PDF</span>
+                <span className="mt-1 text-xs text-slate-500">SR-1, exports, and future register layouts</span>
                 <input
                   type="file"
                   accept="application/pdf,.pdf"
@@ -166,6 +200,10 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
             <div className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Format</p>
+                  <p className="text-sm font-medium text-slate-900">{parsed.formatLabel}</p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 sm:col-span-2 lg:col-span-1">
                   <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">File</p>
                   <p className="text-sm font-medium text-slate-900 truncate">{fileName || parsed.fileName}</p>
                 </div>
@@ -197,7 +235,7 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
                   onChange={(e) => setSkipDuplicates(e.target.checked)}
                 />
                 <span>
-                  <strong>Skip duplicates</strong> when applying the same PDF again (matched by SR-1 key, receipt no.,
+                  <strong>Skip duplicates</strong> when applying the same PDF again (matched by import key, receipt no.,
                   date, and customer).
                 </span>
               </label>
@@ -261,7 +299,7 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
           {step === 'done' && (
             <div className="flex flex-col items-center py-8 text-center">
               <CheckCircle2 className="h-12 w-12 text-emerald-600" aria-hidden />
-              <p className="mt-4 text-base font-semibold text-slate-900">SR-1 import complete</p>
+              <p className="mt-4 text-base font-semibold text-slate-900">Sales register import complete</p>
               {result && <p className="mt-2 max-w-lg text-sm text-slate-600">{result}</p>}
               <p className="mt-3 text-sm text-slate-500">
                 View imported sales in <strong>History</strong>, <strong>SR-1 register</strong>, and customer accounts.

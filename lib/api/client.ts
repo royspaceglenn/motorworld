@@ -684,6 +684,8 @@ export const sr1ImportApi = {
   apply: (payload: {
     sales: Record<string, unknown>[];
     sourceFileName?: string;
+    formatId?: string;
+    formatLabel?: string;
     skipDuplicates?: boolean;
   }) =>
     request<{

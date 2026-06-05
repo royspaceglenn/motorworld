@@ -22,8 +22,9 @@ function norm(s) {
     .toUpperCase();
 }
 
-function sr1ImportSourceNote(fileName, sale) {
-  return `[SR-1 import · ${fileName} · key:${sale.key}]`;
+function salesRegisterImportSourceNote(fileName, sale, formatLabel) {
+  const fmt = String(formatLabel || 'Sales register').trim() || 'Sales register';
+  return `[${fmt} import · ${fileName} · key:${sale.key}]`;
 }
 
 function findPersonByName(persons, name) {
@@ -71,8 +72,8 @@ function findItemForLine(items, line) {
   return null;
 }
 
-function isDuplicateSale(existing, sale, fileName) {
-  const noteKey = sr1ImportSourceNote(fileName, sale);
+function isDuplicateSale(existing, sale, fileName, formatLabel) {
+  const noteKey = salesRegisterImportSourceNote(fileName, sale, formatLabel);
   return existing.some((t) => {
     if (t.type !== 'RELEASE') return false;
     if (String(t.note || '').includes(`key:${sale.key}`)) return true;
@@ -143,7 +144,8 @@ function buildPosLineItems(lines, items) {
 
 export async function applySr1Import(payload, user) {
   const sales = Array.isArray(payload?.sales) ? payload.sales : [];
-  const fileName = String(payload?.sourceFileName || 'SR-1.pdf').trim() || 'SR-1.pdf';
+  const fileName = String(payload?.sourceFileName || 'register.pdf').trim() || 'register.pdf';
+  const formatLabel = String(payload?.formatLabel || payload?.formatId || 'Sales register').trim();
   const skipDuplicates = payload?.skipDuplicates !== false;
 
   if (sales.length === 0) {
@@ -167,7 +169,7 @@ export async function applySr1Import(payload, user) {
 
   for (const sale of sales) {
     try {
-      if (skipDuplicates && isDuplicateSale(existing, sale, fileName)) {
+      if (skipDuplicates && isDuplicateSale(existing, sale, fileName, formatLabel)) {
         result.skipped += 1;
         continue;
       }
@@ -218,10 +220,10 @@ export async function applySr1Import(payload, user) {
       result.stockUnitsDeducted += stockUnits;
 
       const noteParts = [
-        sr1ImportSourceNote(fileName, sale),
+        salesRegisterImportSourceNote(fileName, sale, formatLabel),
         sale.dateCovered ? `Period: ${sale.dateCovered}` : '',
         sale.crNo ? `CR ${sale.crNo}` : '',
-        'SR-1 PDF import (inventory deducted)',
+        'Sales register PDF import (inventory deducted)',
       ].filter(Boolean);
 
       const tx = await addTransaction({
@@ -254,7 +256,7 @@ export async function applySr1Import(payload, user) {
         vehicleId: vehicle?.id ?? null,
         posLineItems,
         bundledSale: posLineItems.length > 1,
-        releasedBy: user?.displayName || user?.email || 'SR-1 import',
+        releasedBy: user?.displayName || user?.email || 'Register import',
       });
 
       existing.unshift(tx);
@@ -268,8 +270,9 @@ export async function applySr1Import(payload, user) {
     }
   }
 
-  await logActivity(user?.id, 'SR1_IMPORT', {
+  await logActivity(user?.id, 'SALES_REGISTER_IMPORT', {
     fileName,
+    formatLabel,
     created: result.created,
     skipped: result.skipped,
     personsCreated: result.personsCreated,
