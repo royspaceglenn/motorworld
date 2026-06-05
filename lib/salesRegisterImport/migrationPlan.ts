@@ -77,7 +77,7 @@ export function computeMigrationPlan(parsed: SalesRegisterParseResult): Migratio
       id: 'sales_summary',
       label: 'Sales summary / P&L',
       systemArea: 'Sales summary',
-      description: 'Revenue, cash vs on-account, COGS, and discounts in the period report.',
+      description: 'Revenue, cash vs on-account, cost of goods and services, and discounts in the period report.',
       count: sales.length,
     },
     {

@@ -560,7 +560,7 @@ export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({
                   <td className="py-3 px-4 text-right font-semibold">{money(summary.totalNetOfGoodsAndServicesSold)}</td>
                 </tr>
                 <tr className="bg-rose-50/50">
-                  <td className="py-3 px-4 text-slate-700">Less: Cost of goods &amp; services (COGS)</td>
+                  <td className="py-3 px-4 text-slate-700">Less: Cost of goods and services sold</td>
                   <td className="py-3 px-4 text-right font-medium text-rose-900">({money(summary.costOfGoodsAndServices)})</td>
                 </tr>
                 <tr className="bg-amber-50/50">
@@ -582,7 +582,8 @@ export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({
               </tbody>
             </table>
             <p className="mt-3 text-xs text-slate-500 leading-relaxed">
-              Formula: (Goods + Service revenue) − COGS − Discounts = Gross profit; then Gross profit − Expenses = Net income. COGS uses{' '}
+              Formula: (Goods + service revenue) − cost of goods and services sold − discounts = gross profit; then gross profit −
+              operating expenses = net income. Cost uses{' '}
               <span className="font-medium text-slate-700">total cost at sale</span> on POS lines or inventory capital price for older
               records.
             </p>
@@ -693,7 +694,7 @@ export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({
                       <th className="py-2 px-3 font-semibold text-slate-600">Payment</th>
                       <th className="py-2 px-3 font-semibold text-slate-600">Bucket</th>
                       <th className="py-2 px-3 font-semibold text-slate-600 text-right whitespace-nowrap">Gross</th>
-                      <th className="py-2 px-3 font-semibold text-slate-600 text-right whitespace-nowrap">COGS</th>
+                      <th className="py-2 px-3 font-semibold text-slate-600 text-right whitespace-nowrap">Cost at sale</th>
                       <th className="py-2 px-3 font-semibold text-slate-600 text-right whitespace-nowrap">Discount</th>
                       <th className="py-2 px-3 font-semibold text-slate-600 text-right whitespace-nowrap">Line net</th>
                     </tr>
@@ -719,8 +720,8 @@ export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({
               )}
             </div>
             <p className="mt-2 text-xs text-slate-500">
-              Line net = gross selling (pre-discount) − COGS − discount for that receipt; sums to gross profit before shop-wide expense
-              totals (see rounding vs. summary totals).
+              Line net = gross selling (pre-discount) − cost at sale − discount for that receipt; sums to gross profit before shop-wide
+              expense totals (see rounding vs. summary totals).
             </p>
           </DashboardSurface>
 
