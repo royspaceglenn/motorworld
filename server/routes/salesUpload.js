@@ -33,7 +33,7 @@ function parseBool(value, defaultValue) {
  * Multipart field: `file` (PDF sales register, e.g. SR-1.pdf)
  * Optional form fields:
  *   - apply (default false) — when true, insert parsed sales into POS/ledger
- *   - skipDuplicates (default true) — skip sales already imported from same PDF/key
+ *   - skipDuplicates (default false) — when true, skip sales already imported from same PDF/key
  *   - formatId (default auto) — auto | sr1
  */
 router.post('/upload-report', requireAdmin, upload.single('file'), async (req, res) => {
@@ -46,7 +46,7 @@ router.post('/upload-report', requireAdmin, upload.single('file'), async (req, r
     const fileName = String(file.originalname || 'register.pdf').trim() || 'register.pdf';
     const formatId = String(req.body?.formatId || 'auto').trim() || 'auto';
     const shouldApply = parseBool(req.body?.apply, false);
-    const skipDuplicates = parseBool(req.body?.skipDuplicates, true);
+    const skipDuplicates = parseBool(req.body?.skipDuplicates, false);
 
     const parsed = await parseSalesRegisterPdf(file.buffer, fileName, formatId);
 
@@ -89,6 +89,7 @@ router.post('/upload-report', requireAdmin, upload.single('file'), async (req, r
       parseErrors: parsed.parseErrors.slice(0, 20),
       sales: parsed.sales,
       records: previewRecords,
+      migrationPlan: parsed.migrationPlan,
       applied: shouldApply,
       import: importResult,
     });

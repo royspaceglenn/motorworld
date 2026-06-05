@@ -1,8 +1,9 @@
 import { extractTextFromPdfBuffer } from './extractPdfText.js';
 import { parseSr1Text } from './parseSr1.js';
 import { salesToFlatRecords } from './toFlatRecords.js';
+import { computeMigrationPlan } from './migrationPlan.js';
 
-export { extractTextFromPdfBuffer, parseSr1Text, salesToFlatRecords };
+export { extractTextFromPdfBuffer, parseSr1Text, salesToFlatRecords, computeMigrationPlan };
 
 /**
  * Full pipeline: PDF buffer → parsed sales + flat ledger records.
@@ -17,5 +18,6 @@ export async function parseSalesRegisterPdf(buffer, fileName = 'register.pdf', f
     formatId: formatId || 'auto',
     formatLabel: 'Sales register (SR-1)',
     records,
+    migrationPlan: computeMigrationPlan(parsed),
   };
 }

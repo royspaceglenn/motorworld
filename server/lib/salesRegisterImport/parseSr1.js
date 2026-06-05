@@ -1,4 +1,10 @@
 import { normalizeSalesRegisterPdfText } from './normalizePdfText.js';
+import {
+  attachPaymentColumnsToLines,
+  parseDueDaysFromTerms,
+  resolveRegisterPaymentMode,
+} from './paymentColumns.js';
+import { parseRegisterSaleDateToIso, parseRegisterSaleDateToYmd } from './saleDates.js';
 
 const MONTHS =
   'January|February|March|April|May|June|July|August|September|October|November|December';
@@ -18,20 +24,8 @@ function parseMoney(raw) {
   return Number.isFinite(n) ? round2(n) : 0;
 }
 
-function parseSaleDateToIso(saleDate) {
-  const d = new Date(`${saleDate.trim()} 12:00:00`);
-  if (Number.isNaN(d.getTime())) return new Date().toISOString();
-  return d.toISOString();
-}
-
-function parseSaleDateToYmd(saleDate) {
-  const d = new Date(`${saleDate.trim()} 12:00:00`);
-  if (Number.isNaN(d.getTime())) return '';
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
+const parseSaleDateToIso = parseRegisterSaleDateToIso;
+const parseSaleDateToYmd = parseRegisterSaleDateToYmd;
 
 function buildSr1SaleKey(line) {
   return [
@@ -42,11 +36,6 @@ function buildSr1SaleKey(line) {
     line.invoiceRef || '—',
     line.customerName.trim().toUpperCase(),
   ].join('|');
-}
-
-function inferPaymentMode(sale) {
-  if (sale.poNo && sale.poNo !== '—') return 'Purchase Order';
-  return 'Cash';
 }
 
 function parseHeadFields(parts, startIdx, endIdx) {
@@ -108,9 +97,68 @@ function parseHeadFields(parts, startIdx, endIdx) {
   return { poNo, invoiceRef, customerName, address, carModel, plateNo, supplierName, description, itemCode };
 }
 
+function splitRowParts(line) {
+  if (line.includes('\t')) {
+    return line.split('\t').map((p) => p.trim()).filter((p) => p.length > 0);
+  }
+  return line.split(/\s{2,}/).map((p) => p.trim()).filter((p) => p.length > 0);
+}
+
+function parseFallbackRow(line) {
+  if (!DATE_START_RE.test(line) || !/PHP/i.test(line)) return null;
+
+  const saleDate = line.match(DATE_START_RE)?.[0];
+  if (!saleDate) return null;
+
+  const tail = line.match(
+    /(\d+(?:\.\d+)?)\s+(PC\/S|PC\/SP|lot|BOTTLE\/S|BOTTLE\/SP|DRUM|BOTS\/S|BOTS\/SP)\s+(?:PHP\s*)?([\d,]+(?:\.\d+)?)\s*PHP\s*([\d,]+(?:\.\d+)?)\s*PHP\s*([\d,]+(?:\.\d+)?)\s*PHP\s*([\d,]+(?:\.\d+)?)\s*PHP\s*([\d,]+(?:\.\d+)?)(?:\s*PHP\s*([\d,]+(?:\.\d+)?))?(?:\s*([\d.]+)%)?/i
+  );
+  if (!tail) return null;
+
+  const head = line.slice(0, tail.index).replace(saleDate, '').trim();
+  const covered = head.match(DATE_COVERED_RE);
+  const dateCovered = covered ? covered[0].toUpperCase() : '';
+  const afterCovered = covered ? head.replace(covered[0], '').trim() : head;
+  const nums = afterCovered.match(/\b\d{3,6}\b/g) || [];
+  const crNo = nums[0] || '';
+  const bsNo = nums[1] || crNo || '';
+  const invoiceRef = nums[2] || '—';
+  const textBits = afterCovered
+    .replace(/\b\d{3,6}\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return {
+    saleDate,
+    saleDateIso: parseSaleDateToIso(saleDate),
+    dateCovered,
+    crNo,
+    bsNo,
+    poNo: '—',
+    invoiceRef,
+    customerName: textBits.split(/\s{2,}|, /)[0]?.trim() || 'Migration import',
+    address: '—',
+    carModel: '—',
+    plateNo: '—',
+    supplierName: '—',
+    itemCode: '',
+    description: textBits || 'Imported register line',
+    qty: Number(tail[1]),
+    uom: String(tail[2]).toUpperCase(),
+    costPerUnit: parseMoney(tail[3]),
+    totalCost: parseMoney(tail[4]),
+    unitPrice: parseMoney(tail[5]),
+    totalPrice: parseMoney(tail[6]),
+    transactionTotal: parseMoney(tail[7]),
+    discountPeso: tail[8] ? parseMoney(tail[8]) : 0,
+    discountPercent: tail[9] ? Number(tail[9]) : 0,
+    rawHead: head,
+  };
+}
+
 function parseTabRow(line) {
-  const parts = line.split('\t').map((p) => p.trim()).filter((p) => p.length > 0);
-  if (parts.length < 10 || !DATE_START_RE.test(parts[0])) return null;
+  const parts = splitRowParts(line);
+  if (parts.length < 8 || !DATE_START_RE.test(parts[0])) return null;
 
   let idx = 1;
   let dateCovered = '';
@@ -249,8 +297,12 @@ function groupLinesIntoSales(lines) {
       address: first.address,
       carModel: first.carModel,
       plateNo: first.plateNo,
-      modeOfPayment: inferPaymentMode(first),
-      terms: '—',
+      modeOfPayment: resolveRegisterPaymentMode(first.transactionType, first.terms, first),
+      terms: first.terms || '—',
+      dueDays:
+        parseDueDaysFromTerms(first.terms) ||
+        (resolveRegisterPaymentMode(first.transactionType, first.terms, first) === 'Credit' ? 30 : 0),
+      transactionType: first.transactionType || 'CASH',
       lines: group,
       subtotalBeforeDiscount: round2(subtotalBeforeDiscount),
       totalDiscount: round2(totalDiscount),
@@ -274,11 +326,7 @@ export function parseSr1Text(text, fileName = 'register.pdf') {
   const rowLines = raw
     .split('\n')
     .map((l) => l.trim())
-    .filter((l) => {
-      if (!DATE_START_RE.test(l) || !/PHP/i.test(l)) return false;
-      const parts = l.split('\t').map((p) => p.trim()).filter(Boolean);
-      return parts.length >= 12;
-    });
+    .filter((l) => DATE_START_RE.test(l) && /PHP/i.test(l));
 
   for (let i = 0; i < rowLines.length; i++) {
     const tabLine = parseTabRow(rowLines[i]);
@@ -289,6 +337,12 @@ export function parseSr1Text(text, fileName = 'register.pdf') {
     const regexLine = parseRegexRow(normalizeSalesRegisterPdfText(rowLines[i]));
     if (regexLine) {
       lines.push(regexLine);
+      continue;
+    }
+    const fallbackLine = parseFallbackRow(rowLines[i]);
+    if (fallbackLine) {
+      lines.push(fallbackLine);
+      warnings.push(`Row ${i + 1}: imported with fallback parser.`);
       continue;
     }
     parseErrors.push(`Row ${i + 1}: could not parse columns.`);
@@ -308,7 +362,8 @@ export function parseSr1Text(text, fileName = 'register.pdf') {
     }
   }
 
-  const sales = groupLinesIntoSales(lines);
+  const linesWithPayment = attachPaymentColumnsToLines(lines, raw);
+  const sales = groupLinesIntoSales(linesWithPayment);
   const customers = [...new Set(sales.map((s) => s.customerName).filter((n) => n && n !== '—'))].sort();
   const ymds = sales.map((s) => parseSaleDateToYmd(s.saleDate)).filter(Boolean).sort();
   const dateRange = ymds.length > 0 ? { start: ymds[0], end: ymds[ymds.length - 1] } : null;

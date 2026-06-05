@@ -8,8 +8,10 @@ import {
   getTransactions,
   getVehicles,
   updateItem,
+  syncReceivablesForRelease,
   upsertDocumentArchivesForRelease,
 } from '../db/store.js';
+import { buildReceivablePayloadFromSale } from './salesRegisterImport/paymentColumns.js';
 import { logActivity } from '../services/activityLogger.js';
 
 function round2(n) {
@@ -97,20 +99,7 @@ async function deductStockForPosLines(posLineItems, saleTimestamp, receiptNumber
     const lineQty = Math.abs(Number(line.quantity) || 0);
     if (lineQty <= 0) continue;
     const inv = await getItemById(line.itemId);
-    if (!inv) {
-      throw new Error(`Inventory item not found for ${line.itemName || line.itemId}.`);
-    }
-    if (inv.quantity < lineQty) {
-      throw new Error(
-        `Insufficient stock for ${inv.name}. Need ${lineQty}, available ${inv.quantity}.`
-      );
-    }
-  }
-
-  for (const line of productLines) {
-    const lineQty = Math.abs(Number(line.quantity) || 0);
-    if (lineQty <= 0) continue;
-    const inv = await getItemById(line.itemId);
+    if (!inv) continue;
     await updateItem(inv.id, {
       quantity: inv.quantity - lineQty,
       unitPrice: inv.unitPrice,
@@ -126,8 +115,8 @@ async function deductStockForPosLines(posLineItems, saleTimestamp, receiptNumber
 function buildPosLineItems(lines, items) {
   return lines.map((line) => {
     const inv = findItemForLine(items, line);
-    const isService = line.uom.toLowerCase() === 'lot' || line.costPerUnit <= 0.005;
-    const itemType = isService && !inv ? 'Service' : 'Product';
+    const isLotService = String(line.uom || '').toLowerCase() === 'lot';
+    const itemType = isLotService && !inv ? 'Service' : 'Product';
     const dpu = line.qty > 0 ? round2(line.discountPeso / line.qty) : 0;
     return {
       itemId: itemType === 'Product' && inv ? inv.id : null,
@@ -138,15 +127,23 @@ function buildPosLineItems(lines, items) {
       lineSubtotal: line.totalPrice,
       discountPerUnit: dpu > 0 ? dpu : null,
       costPerUnit: line.costPerUnit > 0 ? line.costPerUnit : null,
+      unmatchedInventory: itemType === 'Product' && !inv,
     };
   });
+}
+
+function resolveImportCustomerName(sale) {
+  if (sale.customerName && sale.customerName !== '—') return sale.customerName;
+  if (sale.plateNo && sale.plateNo !== '—') return `Vehicle ${sale.plateNo}`;
+  if (sale.invoiceRef && sale.invoiceRef !== '—') return `Invoice ${sale.invoiceRef}`;
+  return 'Walk-in customer';
 }
 
 export async function applySr1Import(payload, user) {
   const sales = Array.isArray(payload?.sales) ? payload.sales : [];
   const fileName = String(payload?.sourceFileName || 'register.pdf').trim() || 'register.pdf';
   const formatLabel = String(payload?.formatLabel || payload?.formatId || 'Sales register').trim();
-  const skipDuplicates = payload?.skipDuplicates !== false;
+  const skipDuplicates = payload?.skipDuplicates === true;
 
   if (sales.length === 0) {
     throw new Error('No sales to import.');
@@ -162,6 +159,7 @@ export async function applySr1Import(payload, user) {
     skipped: 0,
     personsCreated: 0,
     vehiclesCreated: 0,
+    receivablesCreated: 0,
     stockUnitsDeducted: 0,
     transactionIds: [],
     errors: [],
@@ -174,13 +172,11 @@ export async function applySr1Import(payload, user) {
         continue;
       }
 
-      let person =
-        sale.customerName && sale.customerName !== '—'
-          ? findPersonByName(persons, sale.customerName)
-          : null;
-      if (!person && sale.customerName && sale.customerName !== '—') {
+      const customerName = resolveImportCustomerName(sale);
+      let person = findPersonByName(persons, customerName);
+      if (!person) {
         person = await createPerson({
-          fullName: sale.customerName,
+          fullName: customerName,
           contactNumber: '',
           address: sale.address && sale.address !== '—' ? sale.address : '',
         });
@@ -204,7 +200,9 @@ export async function applySr1Import(payload, user) {
         }
       }
 
-      const posLineItems = buildPosLineItems(sale.lines || [], items);
+      const builtLines = buildPosLineItems(sale.lines || [], items);
+      const hasUnmatchedInventory = builtLines.some((l) => l.unmatchedInventory);
+      const posLineItems = builtLines.map(({ unmatchedInventory: _u, ...line }) => line);
       const totalUnits = posLineItems.reduce((s, l) => s + Math.abs(Number(l.quantity) || 0), 0);
       const itemSummary = posLineItems
         .map((l) => l.itemName)
@@ -223,7 +221,8 @@ export async function applySr1Import(payload, user) {
         salesRegisterImportSourceNote(fileName, sale, formatLabel),
         sale.dateCovered ? `Period: ${sale.dateCovered}` : '',
         sale.crNo ? `CR ${sale.crNo}` : '',
-        'Sales register PDF import (inventory deducted)',
+        'Sales register PDF migration import',
+        hasUnmatchedInventory ? 'Some lines kept without inventory match for full audit trail' : '',
       ].filter(Boolean);
 
       const tx = await addTransaction({
@@ -241,7 +240,7 @@ export async function applySr1Import(payload, user) {
         totalCostAtTime: round2(sale.totalCost),
         netIncome: round2(sale.totalValue - sale.totalCost),
         timestamp: saleTimestamp,
-        recipient: sale.customerName && sale.customerName !== '—' ? sale.customerName : null,
+        recipient: customerName,
         note: noteParts.join(' · '),
         receiptNumber,
         invoiceNumber:
@@ -252,6 +251,7 @@ export async function applySr1Import(payload, user) {
               : null,
         modeOfPayment: sale.modeOfPayment || 'Cash',
         terms: sale.terms && sale.terms !== '—' ? sale.terms : null,
+        dueDays: sale.dueDays || undefined,
         personId: person?.id ?? null,
         vehicleId: vehicle?.id ?? null,
         posLineItems,
@@ -260,12 +260,37 @@ export async function applySr1Import(payload, user) {
       });
 
       existing.unshift(tx);
-      await upsertDocumentArchivesForRelease(tx, user?.id ?? null, { soaId: null });
+
+      let soaId = null;
+      const receivablePayload = {
+        ...buildReceivablePayloadFromSale(sale, person?.id ?? null, vehicle?.id ?? null),
+        posLineItems,
+        discountAmount: sale.totalDiscount > 0 ? round2(sale.totalDiscount) : null,
+      };
+      try {
+        const receivable = await syncReceivablesForRelease(tx, receivablePayload);
+        soaId = receivable.soaId;
+        if (soaId || String(sale.modeOfPayment || 'Cash').trim() !== 'Cash') {
+          result.receivablesCreated += 1;
+        }
+      } catch (receivableErr) {
+        result.errors.push(
+          `${customerName} (${sale.saleDate || '—'}): receivable not created — ${receivableErr?.message || 'unknown'}`
+        );
+      }
+
+      try {
+        await upsertDocumentArchivesForRelease(tx, user?.id ?? null, { soaId });
+      } catch (archiveErr) {
+        result.errors.push(
+          `${customerName} (${sale.saleDate || '—'}): archived copy failed — ${archiveErr?.message || 'unknown'}`
+        );
+      }
       result.created += 1;
       result.transactionIds.push(tx.id);
     } catch (e) {
       result.errors.push(
-        `${sale.customerName || 'Sale'} (${sale.saleDate || '—'}): ${e?.message || 'Import failed'}`
+        `${resolveImportCustomerName(sale)} (${sale.saleDate || '—'}): ${e?.message || 'Import failed'}`
       );
     }
   }

@@ -2,6 +2,12 @@
  * Parse Motor World SR-1 / line-by-line sales register PDF text into structured sales + line items.
  */
 import { normalizeSalesRegisterPdfText } from './salesRegisterImport/normalizePdfText';
+import {
+  attachPaymentColumnsToLines,
+  parseDueDaysFromTerms,
+  resolveRegisterPaymentMode,
+} from './salesRegisterImport/paymentColumns';
+import { parseRegisterSaleDateToIso, parseRegisterSaleDateToYmd } from './salesRegisterImport/saleDates';
 
 const MONTHS =
   'January|February|March|April|May|June|July|August|September|October|November|December';
@@ -27,20 +33,8 @@ function parseMoney(raw: string): number {
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
 }
 
-function parseSaleDateToIso(saleDate: string): string {
-  const d = new Date(`${saleDate.trim()} 12:00:00`);
-  if (Number.isNaN(d.getTime())) return new Date().toISOString();
-  return d.toISOString();
-}
-
-function parseSaleDateToYmd(saleDate: string): string {
-  const d = new Date(`${saleDate.trim()} 12:00:00`);
-  if (Number.isNaN(d.getTime())) return '';
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
+const parseSaleDateToIso = parseRegisterSaleDateToIso;
+const parseSaleDateToYmd = parseRegisterSaleDateToYmd;
 
 export interface Sr1ParsedLine {
   saleDate: string;
@@ -67,6 +61,8 @@ export interface Sr1ParsedLine {
   discountPeso: number;
   discountPercent: number;
   rawHead: string;
+  terms?: string;
+  transactionType?: string;
 }
 
 export interface Sr1ParsedSale {
@@ -84,6 +80,8 @@ export interface Sr1ParsedSale {
   plateNo: string;
   modeOfPayment: string;
   terms: string;
+  dueDays?: number;
+  transactionType?: string;
   lines: Sr1ParsedLine[];
   subtotalBeforeDiscount: number;
   totalDiscount: number;
@@ -376,11 +374,6 @@ export function buildSr1SaleKey(line: Sr1ParsedLine): string {
   ].join('|');
 }
 
-function inferPaymentMode(sale: { poNo: string; invoiceRef: string }): string {
-  if (sale.poNo && sale.poNo !== '—') return 'Purchase Order';
-  return 'Cash';
-}
-
 function groupLinesIntoSales(lines: Sr1ParsedLine[]): Sr1ParsedSale[] {
   const map = new Map<string, Sr1ParsedLine[]>();
   for (const line of lines) {
@@ -410,8 +403,14 @@ function groupLinesIntoSales(lines: Sr1ParsedLine[]): Sr1ParsedSale[] {
       address: first.address,
       carModel: first.carModel,
       plateNo: first.plateNo,
-      modeOfPayment: inferPaymentMode(first),
-      terms: '—',
+      modeOfPayment: resolveRegisterPaymentMode(first.transactionType || 'CASH', first.terms || '—', first),
+      terms: first.terms || '—',
+      dueDays:
+        parseDueDaysFromTerms(first.terms || '') ||
+        (resolveRegisterPaymentMode(first.transactionType || 'CASH', first.terms || '—', first) === 'Credit'
+          ? 30
+          : 0),
+      transactionType: first.transactionType || 'CASH',
       lines: group,
       subtotalBeforeDiscount: Math.round(subtotalBeforeDiscount * 100) / 100,
       totalDiscount: Math.round(totalDiscount * 100) / 100,
@@ -448,7 +447,8 @@ export function parseSr1Text(text: string, fileName = 'register.pdf'): Sr1ParseR
     }
   }
 
-  const sales = groupLinesIntoSales(lines);
+  const linesWithPayment = attachPaymentColumnsToLines(lines, text);
+  const sales = groupLinesIntoSales(linesWithPayment);
   const customers = [...new Set(sales.map((s) => s.customerName).filter((n) => n && n !== '—'))].sort();
   const ymds = sales.map((s) => parseSaleDateToYmd(s.saleDate)).filter(Boolean).sort();
   const dateRange =

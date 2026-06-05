@@ -693,6 +693,7 @@ export const sr1ImportApi = {
       skipped: number;
       personsCreated: number;
       vehiclesCreated: number;
+      receivablesCreated?: number;
       stockUnitsDeducted: number;
       transactionIds: string[];
       errors: string[];
@@ -712,12 +713,25 @@ export type SalesReportUploadResult = {
   parseErrors: string[];
   records: Record<string, unknown>[];
   sales?: Record<string, unknown>[];
+  migrationPlan?: {
+    destinations: {
+      id: string;
+      label: string;
+      systemArea: string;
+      description: string;
+      count: number;
+      detail?: string;
+    }[];
+    paymentBreakdown: { mode: string; count: number; total: number }[];
+    dateRange: { start: string; end: string } | null;
+  };
   applied: boolean;
   import: {
     created: number;
     skipped: number;
     personsCreated: number;
     vehiclesCreated: number;
+    receivablesCreated?: number;
     stockUnitsDeducted: number;
     transactionIds: string[];
     errors: string[];

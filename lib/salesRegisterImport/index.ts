@@ -1,11 +1,16 @@
 import { parseSr1Text, type Sr1ParseResult } from '../sr1ImportParse';
+import { computeMigrationPlan, type MigrationPlan } from './migrationPlan';
 
 export type SalesRegisterFormatId = 'auto' | 'sr1';
 
 export type SalesRegisterParseResult = Sr1ParseResult & {
   formatId: SalesRegisterFormatId;
   formatLabel: string;
+  migrationPlan?: MigrationPlan;
 };
+
+export { computeMigrationPlan };
+export type { MigrationPlan, MigrationDestinationRow } from './migrationPlan';
 
 export const SALES_REGISTER_FORMAT_OPTIONS: {
   id: SalesRegisterFormatId;
@@ -60,9 +65,13 @@ export function parseSalesRegisterText(
   const parse = REGISTER_PARSERS[resolved];
   const res = parse(text, fileName);
   const option = SALES_REGISTER_FORMAT_OPTIONS.find((o) => o.id === resolved);
-  return {
+  const merged = {
     ...res,
     formatId: formatId === 'auto' ? 'auto' : resolved,
     formatLabel: option?.label ?? 'Sales register',
+  };
+  return {
+    ...merged,
+    migrationPlan: computeMigrationPlan(merged),
   };
 }

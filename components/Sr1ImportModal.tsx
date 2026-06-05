@@ -40,13 +40,22 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
   const [fileName, setFileName] = useState('');
   const [formatId, setFormatId] = useState<SalesRegisterFormatId>('auto');
   const [parsed, setParsed] = useState<SalesRegisterParseResult | null>(null);
-  const [skipDuplicates, setSkipDuplicates] = useState(true);
+  const [skipDuplicates, setSkipDuplicates] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const uploadFileRef = useRef<File | null>(null);
 
   const previewSales = useMemo(() => parsed?.sales.slice(0, 12) ?? [], [parsed]);
+  const migrationPlan = parsed?.migrationPlan;
+
+  function paymentLabel(mode: string) {
+    const m = String(mode || 'Cash').trim();
+    if (m === 'Credit') return 'A/R';
+    if (m === 'Purchase Order') return 'P.O.';
+    if (m === 'Cheque') return 'Cheque';
+    return 'Cash';
+  }
 
   if (!isOpen) return null;
 
@@ -55,7 +64,7 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
     setFileName('');
     setParsed(null);
     setFormatId('auto');
-    setSkipDuplicates(true);
+    setSkipDuplicates(false);
     setBusy(false);
     setError(null);
     setResult(null);
@@ -89,6 +98,7 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
           dateRange: uploaded.dateRange,
           formatId: uploaded.formatId as SalesRegisterFormatId,
           formatLabel: uploaded.formatLabel,
+          migrationPlan: uploaded.migrationPlan,
         });
         setStep('review');
         return;
@@ -128,7 +138,8 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
         const res = uploaded.import;
         if (!res) throw new Error('Import did not return a result.');
         const msg = [
-          `${res.created} sale(s) recorded`,
+          `${res.created} sale(s) recorded on original PDF dates`,
+          res.receivablesCreated > 0 ? `${res.receivablesCreated} receivable(s) in Receivables` : '',
           res.stockUnitsDeducted > 0 ? `${res.stockUnitsDeducted} unit(s) deducted from stock` : '',
           res.skipped > 0 ? `${res.skipped} skipped (already imported)` : '',
           res.personsCreated > 0 ? `${res.personsCreated} customer(s) added` : '',
@@ -151,7 +162,8 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
         skipDuplicates,
       });
       const msg = [
-        `${res.created} sale(s) recorded`,
+        `${res.created} sale(s) recorded on original PDF dates`,
+        res.receivablesCreated > 0 ? `${res.receivablesCreated} receivable(s) in Receivables` : '',
         res.stockUnitsDeducted > 0 ? `${res.stockUnitsDeducted} unit(s) deducted from stock` : '',
         res.skipped > 0 ? `${res.skipped} skipped (already imported)` : '',
         res.personsCreated > 0 ? `${res.personsCreated} customer(s) added` : '',
@@ -183,7 +195,8 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
           </h2>
           <p className="mt-1 text-sm text-slate-600">
             Upload a sales register PDF to record sales, customers, vehicles, and line items. SR-1 is supported today;
-            more register types can be added later. Re-uploading the same file skips duplicates when that option is on.
+            more register types can be added later. Migration mode imports every sale; enable duplicate skip only when
+            re-applying the same file intentionally.
           </p>
           <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-wide">
             <span className={`rounded-full px-3 py-1 ${stepBadgeClass(step === 'upload', step !== 'upload')}`}>
@@ -274,8 +287,36 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
 
               {parsed.dateRange && (
                 <p className="text-sm text-slate-600">
-                  Date range: <strong>{parsed.dateRange.start}</strong> to <strong>{parsed.dateRange.end}</strong>
+                  When it happened: sales dated <strong>{parsed.dateRange.start}</strong> through{' '}
+                  <strong>{parsed.dateRange.end}</strong> (Philippines time, from the PDF).
                 </p>
+              )}
+
+              {migrationPlan && (
+                <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 p-4">
+                  <h3 className="text-xs font-bold uppercase tracking-wide text-indigo-800">
+                    Where this migration goes in the system
+                  </h3>
+                  <ul className="mt-3 space-y-2.5">
+                    {migrationPlan.destinations.map((d) => (
+                      <li key={d.id} className="text-xs text-slate-700">
+                        <span className="font-semibold text-slate-900">{d.systemArea}</span>
+                        <span className="text-slate-500"> — </span>
+                        {d.description}
+                        <span className="ml-1 font-medium text-indigo-700">({d.count})</span>
+                        {d.detail && <span className="block text-[11px] text-slate-500 mt-0.5">{d.detail}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                  {migrationPlan.paymentBreakdown.length > 0 && (
+                    <p className="mt-3 text-[11px] text-slate-600">
+                      Payment split:{' '}
+                      {migrationPlan.paymentBreakdown
+                        .map((p) => `${paymentLabel(p.mode)} ${p.count} (${money(p.total)})`)
+                        .join(' · ')}
+                    </p>
+                  )}
+                </div>
               )}
 
               <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700">
@@ -286,8 +327,8 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
                   onChange={(e) => setSkipDuplicates(e.target.checked)}
                 />
                 <span>
-                  <strong>Skip duplicates</strong> when applying the same PDF again (matched by import key, receipt no.,
-                  date, and customer).
+                  <strong>Skip duplicates</strong> (optional) when re-applying the same PDF. Leave off for migration so
+                  every sale is recorded.
                 </span>
               </label>
 
@@ -311,6 +352,7 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
                     <tr>
                       <th className="px-2 py-2 font-semibold">Date</th>
                       <th className="px-2 py-2 font-semibold">Customer</th>
+                      <th className="px-2 py-2 font-semibold">Payment</th>
                       <th className="px-2 py-2 font-semibold">BS / CR</th>
                       <th className="px-2 py-2 font-semibold">Lines</th>
                       <th className="px-2 py-2 font-semibold text-right">Total</th>
@@ -322,6 +364,12 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
                         <td className="px-2 py-2 whitespace-nowrap">{s.saleDate}</td>
                         <td className="px-2 py-2 max-w-[200px] truncate" title={s.customerName}>
                           {s.customerName}
+                        </td>
+                        <td className="px-2 py-2 whitespace-nowrap">
+                          {paymentLabel(s.modeOfPayment)}
+                          {s.terms && s.terms !== '—' ? (
+                            <span className="block text-[10px] text-slate-500">{s.terms}</span>
+                          ) : null}
                         </td>
                         <td className="px-2 py-2 font-mono text-[11px]">
                           {s.bsNo || '—'} / {s.crNo || '—'}
@@ -340,9 +388,10 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
               )}
 
               <p className="text-xs text-slate-500 leading-relaxed">
-                Sales are imported as <strong>RELEASE</strong> records and <strong>inventory is deducted</strong> for
-                matched product lines (same as POS). Customers and vehicles are created when missing. Sales with
-                insufficient stock are skipped and listed in errors.
+                After <strong>Apply to system</strong>, check <strong>History</strong> (dated sales),{' '}
+                <strong>Sales summary</strong> (P&amp;L), <strong>Receivables</strong> (credit/P.O.),{' '}
+                <strong>Accounts</strong> (customers), and <strong>Inventory</strong> (stock). Dates and payment type
+                come from the PDF.
               </p>
             </div>
           )}
@@ -353,7 +402,9 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
               <p className="mt-4 text-base font-semibold text-slate-900">Sales register import complete</p>
               {result && <p className="mt-2 max-w-lg text-sm text-slate-600">{result}</p>}
               <p className="mt-3 text-sm text-slate-500">
-                View imported sales in <strong>History</strong>, <strong>SR-1 register</strong>, and customer accounts.
+                Check <strong>History</strong>, <strong>Sales summary</strong>, <strong>Receivables</strong>,{' '}
+                <strong>Accounts</strong>, and <strong>Inventory</strong> — each section should match the migration map
+                above.
               </p>
             </div>
           )}
