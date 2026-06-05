@@ -14,6 +14,12 @@ import {
   type SalesRegisterLineRow,
   type SalesSummaryReleaseDetailRow,
 } from '../lib/salesSummaryReport';
+import { MW_COMPANY, MW_SIGNATURES } from '../lib/motorWorldSpreadsheetSpec';
+import {
+  printCogsReport,
+  printExpensesReport,
+  printSalesSummaryReport,
+} from '../lib/motorWorldPrintReports';
 import { DashboardSectionHeader, DashboardSurface } from './ui/DashboardPrimitives';
 import { Button } from './ui/Button';
 import { FileSpreadsheet, FileUp, Loader2, Printer } from 'lucide-react';
@@ -54,8 +60,8 @@ function round2p(n: number) {
   return Math.round(Number(n || 0) * 100) / 100;
 }
 
-/** Landscape Motor World–style sales deposit printout (includes customer + sale reference). */
-function printSalesSummary(
+/** Landscape print — tab "SALES DEPOSIT PRINT" (10 columns, no customer). */
+function printSalesDepositReport(
   summary: MotorWorldSalesSummary,
   depositRows: SalesDepositReportRow[],
   rangeStart: Date,
@@ -66,46 +72,40 @@ function printSalesSummary(
 
   let sumMat = 0;
   let sumSvc = 0;
+  let sumTax = 0;
   let sumDisc = 0;
-  let sumNet = 0;
-  let sumCost = 0;
-  let sumLineProfit = 0;
   let sumCash = 0;
   let sumChk = 0;
+  let sumVar = 0;
   for (const r of depositRows) {
     sumMat = round2p(sumMat + r.materials);
     sumSvc = round2p(sumSvc + r.services);
+    sumTax = round2p(sumTax + r.taxWithheld);
     sumDisc = round2p(sumDisc + r.discount);
-    sumNet = round2p(sumNet + r.totalAmount);
-    sumCost = round2p(sumCost + r.costAtSale);
-    sumLineProfit = round2p(sumLineProfit + r.lineGrossProfit);
     sumCash = round2p(sumCash + r.cashCardDeposited);
     sumChk = round2p(sumChk + r.checkDeposited);
+    sumVar = round2p(sumVar + r.variance);
   }
 
   const totalSalesGross = round2p(sumMat + sumSvc);
   const totalCollection = round2p(sumCash + sumChk);
-  const netAfterDiscountStrip = round2p(summary.totalNetOfGoodsAndServicesSold - summary.totalDiscounts);
-  const grossProfitStrip = round2p(summary.totalGrossSales);
+  const totalAmountSummary = round2p(totalSalesGross - sumTax);
+  const totalCashSalesSummary = round2p(totalSalesGross - sumDisc);
 
   const bodyRows =
     depositRows.length === 0
-      ? '<tr><td colspan="14" class="muted center">No sales in this date range.</td></tr>'
+      ? '<tr><td colspan="10" class="muted center">No sales in this date range.</td></tr>'
       : depositRows
           .map((r) => {
             const discClass = r.discount > 0 ? 'neg' : '';
             const varClass = Math.abs(r.variance) > 0.005 ? (r.variance < 0 ? 'neg' : '') : '';
             return `<tr>
           <td>${escHtml(r.saleDate)}</td>
-          <td class="nowrap">${escHtml(r.customerName)}</td>
-          <td class="ref">${escHtml(r.saleReference)}</td>
           <td class="num">${moneyPhp(r.materials)}</td>
           <td class="num">${moneyPhp(r.services)}</td>
           <td class="num tax">${moneyPhp(r.taxWithheld)}</td>
           <td class="num ${discClass}">${moneyPhp(r.discount)}</td>
           <td class="num strong">${moneyPhp(r.totalAmount)}</td>
-          <td class="num">${moneyPhp(r.costAtSale)}</td>
-          <td class="num strong">${moneyPhp(r.lineGrossProfit)}</td>
           <td class="nowrap sm">${escHtml(r.dateDepositedLabel)}</td>
           <td class="num">${moneyPhp(r.cashCardDeposited)}</td>
           <td class="num">${moneyPhp(r.checkDeposited)}</td>
@@ -125,16 +125,14 @@ function printSalesSummary(
   body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; padding: 12px 16px; font-size: 10px; }
   .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; border-bottom: 2px solid #1e3a8a; padding-bottom: 10px; margin-bottom: 10px; }
   .co { font-weight: 800; font-size: 14px; color: #1e40af; letter-spacing: 0.02em; }
-  .addr { font-size: 9px; color: #334155; margin-top: 4px; max-width: 340px; line-height: 1.35; }
+  .addr { font-size: 9px; color: #334155; margin-top: 4px; max-width: 420px; line-height: 1.35; }
   .period { text-align: right; font-size: 10px; color: #1e293b; }
   .period strong { display: block; color: #1e40af; font-size: 13px; margin-bottom: 6px; letter-spacing: 0.1em; }
-  .title { text-align: center; font-weight: 800; font-size: 13px; color: #1e40af; letter-spacing: 0.12em; margin: 10px 0 12px; }
-  table.main { width: 100%; border-collapse: collapse; table-layout: fixed; }
-  table.main th, table.main td { border: 1px solid #0f172a; padding: 5px 6px; vertical-align: middle; word-wrap: break-word; }
+  table.main { width: 100%; border-collapse: collapse; table-layout: fixed; margin-top: 8px; }
+  table.main th, table.main td { border: 1px solid #0f172a; padding: 5px 6px; vertical-align: middle; }
   table.main thead th { background: #e2e8f0; font-weight: 700; font-size: 8px; text-transform: uppercase; letter-spacing: 0.04em; text-align: center; }
   table.main .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-  table.main .nowrap { white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
-  table.main .ref { font-size: 9px; }
+  table.main .nowrap { white-space: nowrap; }
   table.main .sm { font-size: 9px; }
   .neg { color: #b91c1c; font-weight: 600; }
   .tax { color: #1d4ed8; }
@@ -147,95 +145,87 @@ function printSalesSummary(
   .foot td { padding: 4px 0; border-bottom: 1px solid #e2e8f0; }
   .foot td:first-child { font-weight: 600; }
   .foot td.num { text-align: right; font-weight: 700; }
-  .strip { margin-top: 16px; border: 1px solid #0f172a; padding: 10px 12px; max-width: 420px; margin-left: auto; }
-  .strip .row { display: flex; justify-content: space-between; gap: 12px; margin: 5px 0; font-size: 10px; }
-  .strip .row.taxrow .v { color: #1d4ed8; font-weight: 700; }
-  .strip .row.disc .v { color: #b91c1c; font-weight: 700; }
-  .strip .row.total .v { font-weight: 800; font-size: 11px; }
   .prep { margin-top: 14px; font-size: 10px; color: #334155; }
   .sigs { margin-top: 28px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px 40px; font-size: 9px; }
   .sig { border-top: 1px solid #0f172a; padding-top: 6px; text-align: center; }
   .sig .l { font-weight: 700; letter-spacing: 0.08em; margin-bottom: 20px; }
-  .bottomline { margin-top: 20px; border-top: 2px solid #0f172a; padding-top: 8px; display: flex; justify-content: flex-end; gap: 16px; font-weight: 800; font-size: 11px; }
   @media print { body { padding: 0; } }
 </style></head><body>
   <div class="header">
     <div>
-      <div class="co">MOTOR WORLD AUTO SERVICES & SALES CORPORATION</div>
-      <div class="addr">Sales deposit report — matches Motor World–style layout. Customer and sale reference on each line.</div>
+      <div class="co">${escHtml(MW_COMPANY.name)}</div>
+      <div class="addr">${escHtml(MW_COMPANY.address)}<br/>${escHtml(MW_COMPANY.phone)}</div>
     </div>
     <div class="period">
       <strong>SALES DEPOSIT REPORTS</strong>
-      <div><strong>Starting date:</strong> ${escHtml(periodStart)}</div>
-      <div><strong>Ending date:</strong> ${escHtml(periodEnd)}</div>
+      <div><strong>Starting Date:</strong> ${escHtml(periodStart)}</div>
+      <div><strong>Ending Date:</strong> ${escHtml(periodEnd)}</div>
     </div>
   </div>
 
   <table class="main">
     <thead>
       <tr>
-        <th style="width:9%">Date</th>
-        <th style="width:11%">Customer name</th>
-        <th style="width:8%">Ref. no.</th>
-        <th style="width:9%">Sales — materials</th>
-        <th style="width:9%">Sales — services</th>
-        <th style="width:7%">Tax withheld</th>
-        <th style="width:7%">Discount</th>
-        <th style="width:8%">Total amount</th>
-        <th style="width:8%">Cost at sale</th>
-        <th style="width:8%">Gross profit</th>
-        <th style="width:9%">Date deposited</th>
-        <th style="width:8%">Cash — card deposited</th>
-        <th style="width:7%">Check deposited</th>
-        <th style="width:5%">Variance</th>
+        <th>Date</th>
+        <th>Sales — materials</th>
+        <th>Sales — services</th>
+        <th>Tax withheld</th>
+        <th>Discount</th>
+        <th>Total amount</th>
+        <th>Date deposited</th>
+        <th>Cash — card deposited</th>
+        <th>Check deposited</th>
+        <th>Variance</th>
       </tr>
     </thead>
     <tbody>${bodyRows}</tbody>
+    <tfoot>
+      <tr>
+        <td><strong>TOTAL</strong></td>
+        <td class="num"><strong>${moneyPhp(sumMat)}</strong></td>
+        <td class="num"><strong>${moneyPhp(sumSvc)}</strong></td>
+        <td class="num"><strong>${moneyPhp(sumTax)}</strong></td>
+        <td class="num"><strong>${moneyPhp(sumDisc)}</strong></td>
+        <td></td>
+        <td></td>
+        <td class="num"><strong>${moneyPhp(sumCash)}</strong></td>
+        <td class="num"><strong>${moneyPhp(sumChk)}</strong></td>
+        <td class="num"><strong>${moneyPhp(sumVar)}</strong></td>
+      </tr>
+    </tfoot>
   </table>
 
   <div class="foot">
     <div>
-      <h4>SALES</h4>
+      <h4>SALES:</h4>
       <table>
         <tr><td>SALES — MATERIALS</td><td class="num">${moneyPhp(sumMat)}</td></tr>
         <tr><td>SALES — SERVICES</td><td class="num">${moneyPhp(sumSvc)}</td></tr>
         <tr><td>TOTAL SALES</td><td class="num">${moneyPhp(totalSalesGross)}</td></tr>
-        <tr><td>COST OF GOODS AND SERVICES SOLD</td><td class="num">${moneyPhp(summary.costOfGoodsAndServices)}</td></tr>
-        <tr><td>DISCOUNT</td><td class="num">${moneyPhp(summary.totalDiscounts)}</td></tr>
-        <tr><td>GROSS PROFIT</td><td class="num">${moneyPhp(grossProfitStrip)}</td></tr>
+        <tr><td>TAX WITHHELD</td><td class="num">${moneyPhp(sumTax)}</td></tr>
+        <tr><td>TOTAL AMOUNT</td><td class="num">${moneyPhp(totalAmountSummary)}</td></tr>
+        <tr><td>DISCOUNT</td><td class="num">${moneyPhp(sumDisc)}</td></tr>
+        <tr><td>TOTAL CASH SALES</td><td class="num">${moneyPhp(totalCashSalesSummary)}</td></tr>
       </table>
     </div>
     <div>
-      <h4>SALES COLLECTION</h4>
+      <h4>SALES COLLECTION:</h4>
       <table>
         <tr><td>CASH — CARD DEPOSITS</td><td class="num">${moneyPhp(sumCash)}</td></tr>
         <tr><td>CHECK DEPOSITS</td><td class="num">${moneyPhp(sumChk)}</td></tr>
         <tr><td>TOTAL COLLECTION</td><td class="num">${moneyPhp(totalCollection)}</td></tr>
+        <tr><td>TOTAL AMOUNT</td><td class="num">${moneyPhp(totalCollection)}</td></tr>
       </table>
     </div>
-  </div>
-
-  <div class="strip">
-    <div class="row taxrow"><span>TAX WITHHELD</span><span class="v">${moneyPhp(0)}</span></div>
-    <div class="row"><span>TOTAL AMOUNT</span><span class="v">${moneyPhp(summary.totalNetOfGoodsAndServicesSold)}</span></div>
-    <div class="row disc"><span>DISCOUNT</span><span class="v">${moneyPhp(summary.totalDiscounts)}</span></div>
-    <div class="row"><span>COST OF GOODS AND SERVICES SOLD</span><span class="v">${moneyPhp(summary.costOfGoodsAndServices)}</span></div>
-    <div class="row total"><span>NET SALES (after discount)</span><span class="v">${moneyPhp(netAfterDiscountStrip)}</span></div>
-    <div class="row total"><span>GROSS PROFIT (after cost &amp; discount)</span><span class="v">${moneyPhp(grossProfitStrip)}</span></div>
   </div>
 
   <p class="prep"><strong>DATE PREPARED:</strong> ${escHtml(datePrepared)}</p>
 
   <div class="sigs">
-    <div class="sig"><div class="l">PREPARED BY</div><div style="height:28px"></div><div>Signature over printed name</div></div>
-    <div class="sig"><div class="l">CHECKED BY</div><div style="height:28px"></div><div>Signature over printed name</div></div>
-    <div class="sig"><div class="l">AUDITED BY</div><div style="height:28px"></div><div>Signature over printed name</div></div>
-    <div class="sig"><div class="l">VERIFIED BY</div><div style="height:28px"></div><div>Signature over printed name</div></div>
-  </div>
-
-  <div class="bottomline">
-    <span>TOTAL AMOUNT (sum of sale totals)</span>
-    <span>${moneyPhp(sumNet)}</span>
+    <div class="sig"><div class="l">PREPARED BY:</div>${escHtml(MW_SIGNATURES.preparedBy)}</div>
+    <div class="sig"><div class="l">CHECKED BY:</div>${escHtml(MW_SIGNATURES.checkedBy)}</div>
+    <div class="sig"><div class="l">AUDITED BY:</div>${escHtml(MW_SIGNATURES.auditedBy)}</div>
+    <div class="sig"><div class="l">VERIFIED BY:</div>${escHtml(MW_SIGNATURES.verifiedBy)}</div>
   </div>
 </body></html>`;
 
@@ -503,10 +493,39 @@ export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({
               type="button"
               variant="secondary"
               disabled={invalidRange || !summary || loading}
-              onClick={() => summary && printSalesSummary(summary, depositReportRows, rangeStart, rangeEnd)}
+              onClick={() => summary && printSalesSummaryReport(summary, rangeStart, rangeEnd)}
+            >
+              <Printer className="w-4 h-4 mr-1.5" />
+              Print sales summary
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={invalidRange || !summary || loading}
+              onClick={() => summary && printSalesDepositReport(summary, depositReportRows, rangeStart, rangeEnd)}
             >
               <Printer className="w-4 h-4 mr-1.5" />
               Print deposit report
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={invalidRange || !summary || loading}
+              onClick={() =>
+                printCogsReport(transactions, items, rangeStart, rangeEnd, summary?.periodLabel || '')
+              }
+            >
+              <Printer className="w-4 h-4 mr-1.5" />
+              Print COGS
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={invalidRange || !summary || loading}
+              onClick={() => printExpensesReport(expenses, rangeStart, rangeEnd, summary?.periodLabel || '')}
+            >
+              <Printer className="w-4 h-4 mr-1.5" />
+              Print expenses
             </Button>
           </div>
         </div>
@@ -521,86 +540,74 @@ export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({
       {!invalidRange && summary && (
         <>
           <DashboardSurface className="p-5 sm:p-6">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-4">Sales breakdown</h3>
-            <table className="w-full text-sm border border-slate-200 rounded-lg overflow-hidden">
-              <tbody className="divide-y divide-slate-100">
-                <tr className="bg-white">
-                  <td className="py-3 px-4 text-slate-700">Sales of goods</td>
-                  <td className="py-3 px-4 text-right font-medium text-slate-900">{money(summary.salesOfGoods)}</td>
-                </tr>
-                <tr className="bg-slate-50/80">
-                  <td className="py-3 px-4 text-slate-700">Sales of service and labor</td>
-                  <td className="py-3 px-4 text-right font-medium text-slate-900">{money(summary.salesOfServiceAndLabor)}</td>
-                </tr>
-                <tr className="bg-indigo-50">
-                  <td className="py-3 px-4 font-semibold text-slate-900">Total net of goods &amp; services sold</td>
-                  <td className="py-3 px-4 text-right font-bold text-indigo-900">{money(summary.totalNetOfGoodsAndServicesSold)}</td>
-                </tr>
-                <tr className="bg-white">
-                  <td className="py-3 px-4 text-slate-700">Cash sales</td>
-                  <td className="py-3 px-4 text-right font-medium text-slate-900">{money(summary.cashSales)}</td>
-                </tr>
-                <tr className="bg-slate-50/80">
-                  <td className="py-3 px-4 text-slate-700">Accounts receivable &amp; similar (Credit, P.O., Cheque)</td>
-                  <td className="py-3 px-4 text-right font-medium text-slate-900">{money(summary.accountsReceivableAndSimilar)}</td>
-                </tr>
-              </tbody>
-            </table>
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-1">Sales summary reports</h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Matches workbook tab <strong>SALES SUMMARY REPORTS</strong> — journal col V (total price), T (cost), AB (discount), M (terms).
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] text-sm border border-slate-200 rounded-lg overflow-hidden">
+                <tbody>
+                  <tr className="bg-slate-50 divide-x divide-slate-200">
+                    <td className="py-2 px-3 font-semibold text-slate-700">SALES OF GOODS</td>
+                    <td className="py-2 px-3 text-right font-medium">{money(summary.salesOfGoods)}</td>
+                    <td className="py-2 px-3 font-semibold text-slate-700">SALES OF SERVICE AND LABOR</td>
+                    <td className="py-2 px-3 text-right font-medium">{money(summary.salesOfServiceAndLabor)}</td>
+                    <td className="py-2 px-3 font-bold text-indigo-900">TOTAL SALES</td>
+                    <td className="py-2 px-3 text-right font-bold text-indigo-900">{money(summary.totalNetOfGoodsAndServicesSold)}</td>
+                  </tr>
+                  <tr className="bg-white divide-x divide-slate-200">
+                    <td className="py-2 px-3 font-semibold text-slate-700">CASH SALES</td>
+                    <td className="py-2 px-3 text-right font-medium">{money(summary.cashSales)}</td>
+                    <td className="py-2 px-3 font-semibold text-slate-700">ACCOUNT RECEIVABLES</td>
+                    <td className="py-2 px-3 text-right font-medium">{money(summary.accountsReceivableAndSimilar)}</td>
+                    <td colSpan={2} className="py-2 px-3 text-xs text-slate-500">
+                      Cash = TERMS CASH, CHECK, MAYA-CARD · AR = 30 DAYS, 60 DAYS
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
             {checkCashPlusAr.diff > 0.02 && (
               <p className="mt-2 text-xs text-amber-700">
-                Note: cash + on-account ({money(checkCashPlusAr.sum)}) differs from total revenue by {money(checkCashPlusAr.diff)}{' '}
-                (rounding or legacy rows without payment mode).
+                Cash + AR ({money(checkCashPlusAr.sum)}) differs from total sales by {money(checkCashPlusAr.diff)} — other TERMS (P.O., etc.) or missing terms on imported rows.
               </p>
             )}
-            <p className="mt-2 text-xs text-slate-500">
-              {summary.releaseCount} release (sale) record(s) in range. Returns and other movement types are excluded from this summary.
-            </p>
           </DashboardSurface>
 
           <DashboardSurface className="p-5 sm:p-6">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-4">Profit path (matches manual worksheet)</h3>
-            <table className="w-full text-sm border border-slate-200 rounded-lg overflow-hidden">
-              <tbody className="divide-y divide-slate-100">
-                <tr className="bg-white">
-                  <td className="py-3 px-4 text-slate-700">Sales of goods</td>
-                  <td className="py-3 px-4 text-right font-medium">{money(summary.salesOfGoods)}</td>
-                </tr>
-                <tr className="bg-slate-50/80">
-                  <td className="py-3 px-4 text-slate-700">Sale of service and labor</td>
-                  <td className="py-3 px-4 text-right font-medium">{money(summary.salesOfServiceAndLabor)}</td>
-                </tr>
-                <tr className="bg-white">
-                  <td className="py-3 px-4 font-medium text-slate-800">Total net of goods &amp; services sold</td>
-                  <td className="py-3 px-4 text-right font-semibold">{money(summary.totalNetOfGoodsAndServicesSold)}</td>
-                </tr>
-                <tr className="bg-rose-50/50">
-                  <td className="py-3 px-4 text-slate-700">Less: Cost of goods and services sold</td>
-                  <td className="py-3 px-4 text-right font-medium text-rose-900">({money(summary.costOfGoodsAndServices)})</td>
-                </tr>
-                <tr className="bg-amber-50/50">
-                  <td className="py-3 px-4 text-slate-700">Less: Discounts</td>
-                  <td className="py-3 px-4 text-right font-medium text-amber-900">({money(summary.totalDiscounts)})</td>
-                </tr>
-                <tr className="bg-emerald-50">
-                  <td className="py-3 px-4 font-semibold text-slate-900">Total gross sales (gross profit)</td>
-                  <td className="py-3 px-4 text-right font-bold text-emerald-900">{money(summary.totalGrossSales)}</td>
-                </tr>
-                <tr className="bg-orange-50/60">
-                  <td className="py-3 px-4 text-slate-700">Less: Operating expenses (this period)</td>
-                  <td className="py-3 px-4 text-right font-medium text-orange-900">({money(summary.totalOperatingExpenses)})</td>
-                </tr>
-                <tr className="bg-slate-900 text-white">
-                  <td className="py-3 px-4 font-bold">Net income</td>
-                  <td className="py-3 px-4 text-right font-bold">{money(summary.netIncome)}</td>
-                </tr>
-              </tbody>
-            </table>
-            <p className="mt-3 text-xs text-slate-500 leading-relaxed">
-              Formula: (Goods + service revenue) − cost of goods and services sold − discounts = gross profit; then gross profit −
-              operating expenses = net income. Cost uses{' '}
-              <span className="font-medium text-slate-700">total cost at sale</span> on POS lines or inventory capital price for older
-              records.
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-4">Profit path (row 19)</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[960px] text-xs sm:text-sm border border-slate-200 rounded-lg overflow-hidden">
+                <thead className="bg-slate-100">
+                  <tr>
+                    <th className="py-2 px-2 text-left font-semibold text-slate-600">SALES OF GOODS</th>
+                    <th className="py-2 px-2 text-left font-semibold text-slate-600">SALE OF SERVICE AND LABOR</th>
+                    <th className="py-2 px-2 text-left font-semibold text-slate-600">TOTAL NET OF GOODS &amp; SERVICES SOLD</th>
+                    <th className="py-2 px-2 text-left font-semibold text-slate-600">LESS: COST OF GOODS &amp; SERVICES</th>
+                    <th className="py-2 px-2 text-left font-semibold text-slate-600">LESS: DISCOUNT</th>
+                    <th className="py-2 px-2 text-left font-semibold text-slate-600">TOTAL GROSS SALES</th>
+                    <th className="py-2 px-2 text-left font-semibold text-slate-600">LESS: EXPENSES</th>
+                    <th className="py-2 px-2 text-left font-semibold text-slate-600">NET INCOME</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="bg-white">
+                    <td className="py-3 px-2 text-right font-medium">{money(summary.salesOfGoods)}</td>
+                    <td className="py-3 px-2 text-right font-medium">{money(summary.salesOfServiceAndLabor)}</td>
+                    <td className="py-3 px-2 text-right font-semibold">{money(summary.totalNetOfGoodsAndServicesSold)}</td>
+                    <td className="py-3 px-2 text-right text-rose-900">({money(summary.costOfGoodsAndServices)})</td>
+                    <td className="py-3 px-2 text-right text-amber-900">({money(summary.totalDiscounts)})</td>
+                    <td className="py-3 px-2 text-right font-bold text-emerald-900">{money(summary.totalGrossSales)}</td>
+                    <td className="py-3 px-2 text-right text-orange-900">({money(summary.totalOperatingExpenses)})</td>
+                    <td className="py-3 px-2 text-right font-bold">{money(summary.netIncome)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-3 text-xs text-slate-500">
+              Formula: TOTAL GROSS SALES = total net − cost of goods &amp; services − discount; NET INCOME = total gross sales − expenses (same as spreadsheet cells C19−D19−E19 and F19−G19).
             </p>
+            <p className="mt-1 text-xs text-slate-500">{summary.releaseCount} release record(s) in range.</p>
           </DashboardSurface>
 
           <DashboardSurface className="p-5 sm:p-6">
@@ -706,9 +713,9 @@ export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({
                       <th className="py-2 px-3 font-semibold text-slate-600">Customer</th>
                       <th className="py-2 px-3 font-semibold text-slate-600">Items</th>
                       <th className="py-2 px-3 font-semibold text-slate-600">Payment</th>
-                      <th className="py-2 px-3 font-semibold text-slate-600">Bucket</th>
+                      <th className="py-2 px-3 font-semibold text-slate-600">Terms (col M)</th>
                       <th className="py-2 px-3 font-semibold text-slate-600 text-right whitespace-nowrap">Gross</th>
-                      <th className="py-2 px-3 font-semibold text-slate-600 text-right whitespace-nowrap">Cost at sale</th>
+                      <th className="py-2 px-3 font-semibold text-slate-600 text-right whitespace-nowrap">Total cost (T)</th>
                       <th className="py-2 px-3 font-semibold text-slate-600 text-right whitespace-nowrap">Discount</th>
                       <th className="py-2 px-3 font-semibold text-slate-600 text-right whitespace-nowrap">Line net</th>
                     </tr>
@@ -720,9 +727,7 @@ export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({
                         <td className="py-2 px-3 text-slate-800">{r.recipient}</td>
                         <td className="py-2 px-3 text-slate-600 max-w-[220px]">{r.itemSummary}</td>
                         <td className="py-2 px-3 text-slate-700 whitespace-nowrap">{paymentModeLabel(r.modeOfPayment)}</td>
-                        <td className="py-2 px-3 text-slate-600 whitespace-nowrap">
-                          {r.paymentBucket === 'cash' ? 'Cash' : 'On account'}
-                        </td>
+                        <td className="py-2 px-3 text-slate-600 whitespace-nowrap">{r.paymentTerms}</td>
                         <td className="py-2 px-3 text-right font-medium text-slate-900">{money(r.grossSelling)}</td>
                         <td className="py-2 px-3 text-right text-slate-700">{money(r.cogs)}</td>
                         <td className="py-2 px-3 text-right text-slate-700">{money(r.discount)}</td>
@@ -742,14 +747,13 @@ export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({
           <DashboardSurface className="p-5 sm:p-6">
             <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-1">Sales deposit report (print preview)</h3>
             <p className="text-xs text-slate-500 mb-4">
-              Same columns as the printable Motor World–style sheet: customer name, sale reference (receipt no. or TX-id), materials vs
-              services split, cost at sale, gross profit, deposits, and variance. Use <strong>Print deposit report</strong> above for landscape output.
+              Same layout as workbook tabs <strong>SALES DEPOSIT</strong> / <strong>SALES DEPOSIT PRINT</strong> (10 columns on print; preview includes customer for lookup).
             </p>
             <div className="overflow-x-auto border border-slate-900 rounded-sm">
               {depositReportRows.length === 0 ? (
                 <p className="p-6 text-sm text-slate-500">No sales in this range.</p>
               ) : (
-                <table className="w-full text-xs min-w-[1100px] border-collapse">
+                <table className="w-full text-xs min-w-[960px] border-collapse">
                   <thead>
                     <tr className="bg-slate-200">
                       <th className="border border-slate-900 px-2 py-2 text-left font-bold">Date</th>
@@ -759,13 +763,11 @@ export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({
                       <th className="border border-slate-900 px-2 py-2 text-right font-bold">Services</th>
                       <th className="border border-slate-900 px-2 py-2 text-right font-bold text-blue-800">Tax</th>
                       <th className="border border-slate-900 px-2 py-2 text-right font-bold text-red-800">Discount</th>
-                      <th className="border border-slate-900 px-2 py-2 text-right font-bold">Total</th>
-                      <th className="border border-slate-900 px-2 py-2 text-right font-bold">Cost at sale</th>
-                      <th className="border border-slate-900 px-2 py-2 text-right font-bold">Gross profit</th>
-                      <th className="border border-slate-900 px-2 py-2 text-left font-bold">Deposited</th>
+                      <th className="border border-slate-900 px-2 py-2 text-right font-bold">Total amount</th>
+                      <th className="border border-slate-900 px-2 py-2 text-left font-bold">Date deposited</th>
                       <th className="border border-slate-900 px-2 py-2 text-right font-bold">Cash/card</th>
                       <th className="border border-slate-900 px-2 py-2 text-right font-bold">Check</th>
-                      <th className="border border-slate-900 px-2 py-2 text-right font-bold">Var.</th>
+                      <th className="border border-slate-900 px-2 py-2 text-right font-bold">Variance</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -783,8 +785,6 @@ export const SalesSummaryReportView: React.FC<SalesSummaryReportViewProps> = ({
                           {r.discount > 0 ? money(r.discount) : money(0)}
                         </td>
                         <td className="border border-slate-900 px-2 py-1.5 text-right font-semibold tabular-nums">{money(r.totalAmount)}</td>
-                        <td className="border border-slate-900 px-2 py-1.5 text-right tabular-nums">{money(r.costAtSale)}</td>
-                        <td className="border border-slate-900 px-2 py-1.5 text-right font-semibold tabular-nums">{money(r.lineGrossProfit)}</td>
                         <td className="border border-slate-900 px-2 py-1.5 text-[11px]">{r.dateDepositedLabel}</td>
                         <td className="border border-slate-900 px-2 py-1.5 text-right tabular-nums">{money(r.cashCardDeposited)}</td>
                         <td className="border border-slate-900 px-2 py-1.5 text-right tabular-nums">{money(r.checkDeposited)}</td>

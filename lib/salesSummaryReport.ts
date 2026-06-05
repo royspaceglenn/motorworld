@@ -1,5 +1,10 @@
 import type { Expense, InventoryItem, Person, Transaction, Vehicle } from '../types';
 import { itemCapitalPerUnit } from './inventoryPricing';
+import {
+  isSpreadsheetAccountReceivableTerms,
+  isSpreadsheetCashSalesTerms,
+  journalTermsLabel,
+} from './motorWorldSpreadsheetSpec';
 
 function round2(n: number) {
   return Math.round(Number(n || 0) * 100) / 100;
@@ -115,8 +120,10 @@ export function releaseSplitGoodsServiceGross(t: Transaction): { goods: number; 
 }
 
 export function transactionPaymentBucket(t: Transaction): 'cash' | 'onAccount' {
+  if (isSpreadsheetCashSalesTerms(t)) return 'cash';
+  if (isSpreadsheetAccountReceivableTerms(t)) return 'onAccount';
   const m = String(t.modeOfPayment || 'Cash').trim().toLowerCase();
-  if (m === 'cash') return 'cash';
+  if (m === 'cash' || m === 'cheque') return 'cash';
   return 'onAccount';
 }
 
@@ -139,10 +146,7 @@ export interface MotorWorldSalesSummary {
 }
 
 /**
- * P&amp;L flow aligned with common sales summary practice (see Motor World–style reports):
- * 1) Revenue: goods + service = total net of goods &amp; services sold (pre-discount selling).
- * 2) Less: COGS, less: discounts → total gross sales (gross profit).
- * 3) Less: operating expenses → net income.
+ * Matches workbook tab "SALES SUMMARY REPORTS" (SUMIFS on SALES JOURNAL cols T, V, AB, M).
  */
 export function computeMotorWorldSalesSummary(
   transactions: Transaction[],
@@ -169,14 +173,15 @@ export function computeMotorWorldSalesSummary(
   let totalDiscounts = 0;
 
   for (const t of releases) {
-    const gross = releaseGrossSellingAmount(t);
+    const lineGross = releaseGrossSellingAmount(t);
     const split = releaseSplitGoodsServiceGross(t);
     salesOfGoods += split.goods;
     salesOfServiceAndLabor += split.service;
 
-    const bucket = transactionPaymentBucket(t);
-    if (bucket === 'cash') cashSales += gross;
-    else accountsReceivableAndSimilar += gross;
+    if (isSpreadsheetCashSalesTerms(t)) cashSales += lineGross;
+    else if (isSpreadsheetAccountReceivableTerms(t)) accountsReceivableAndSimilar += lineGross;
+    else if (transactionPaymentBucket(t) === 'cash') cashSales += lineGross;
+    else accountsReceivableAndSimilar += lineGross;
 
     costOfGoodsAndServices += releaseCogs(t, items);
     totalDiscounts += releaseDiscountAmount(t);
@@ -225,6 +230,8 @@ export interface SalesSummaryReleaseDetailRow {
   recipient: string;
   itemSummary: string;
   modeOfPayment: string;
+  /** Journal TERMS column (CASH, 30 DAYS, CHECK, …). */
+  paymentTerms: string;
   paymentBucket: 'cash' | 'onAccount';
   grossSelling: number;
   cogs: number;
@@ -258,6 +265,7 @@ export function buildSalesSummaryReleaseDetails(
         recipient: t.recipient || '—',
         itemSummary: (t.itemName || '—').slice(0, 200),
         modeOfPayment: String(t.modeOfPayment || 'Cash').trim(),
+        paymentTerms: journalTermsLabel(t),
         paymentBucket: transactionPaymentBucket(t),
         grossSelling: gross,
         cogs,
@@ -279,10 +287,6 @@ export interface SalesDepositReportRow {
   taxWithheld: number;
   discount: number;
   totalAmount: number;
-  /** Cost of goods and services sold for this receipt (capital/cost at sale). */
-  costAtSale: number;
-  /** Net sale total minus cost at sale (after discount, before shop expenses). */
-  lineGrossProfit: number;
   dateDepositedLabel: string;
   cashCardDeposited: number;
   checkDeposited: number;
@@ -297,7 +301,7 @@ export function saleReferenceForReport(t: Transaction): string {
 
 export function buildSalesDepositReportRows(
   transactions: Transaction[],
-  items: InventoryItem[],
+  _items: InventoryItem[],
   start: Date,
   end: Date
 ): SalesDepositReportRow[] {
@@ -313,23 +317,22 @@ export function buildSalesDepositReportRows(
     .map((t) => {
       const { goods: materials, service: services } = releaseSplitGoodsServiceGross(t);
       const discount = releaseDiscountAmount(t);
-      const totalAmount = round2(Number(t.totalValue || 0));
-      const costAtSale = releaseCogs(t, items);
-      const lineGrossProfit = round2(totalAmount - costAtSale);
-      const mode = String(t.modeOfPayment || 'Cash').trim().toLowerCase();
+      const taxWithheld = 0;
+      const totalAmount = round2(materials + services - taxWithheld - discount);
+      const terms = journalTermsLabel(t);
 
       let dateDepositedLabel = '—';
       let cashCardDeposited = 0;
       let checkDeposited = 0;
 
-      if (mode === 'cash') {
+      if (terms === 'CASH' || terms === 'MAYA-CARD') {
         dateDepositedLabel = new Date(t.timestamp).toLocaleDateString(undefined, {
           year: 'numeric',
           month: 'long',
           day: 'numeric',
         });
         cashCardDeposited = totalAmount;
-      } else if (mode === 'cheque') {
+      } else if (terms === 'CHECK' || terms === 'CHEQUE' || String(t.modeOfPayment || '').trim() === 'Cheque') {
         if (t.chequeStatus === 'cleared' && t.chequeClearedAt) {
           dateDepositedLabel = new Date(t.chequeClearedAt).toLocaleDateString(undefined, {
             year: 'numeric',
@@ -363,8 +366,6 @@ export function buildSalesDepositReportRows(
         taxWithheld: 0,
         discount: round2(discount),
         totalAmount,
-        costAtSale,
-        lineGrossProfit,
         dateDepositedLabel,
         cashCardDeposited: round2(cashCardDeposited),
         checkDeposited: round2(checkDeposited),
