@@ -85,6 +85,7 @@ async function buildViewerPayload(settings) {
   const allExpenses = await getExpenses();
   const items = allItems.map((item) => ({
     id: item.id,
+    itemCode: item.itemCode ?? '',
     name: item.name,
     brand: item.brand,
     category: item.category,

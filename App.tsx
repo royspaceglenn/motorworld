@@ -163,6 +163,7 @@ const App: React.FC = () => {
       unitPrice: Number.isFinite(p) ? p : 0,
       capitalPrice: Number.isFinite(cap) ? cap : p,
       minStockLevel: Number.isFinite(m) ? m : 0,
+      itemCode: String(i.itemCode ?? i.item_code ?? '').trim(),
       brand: i.brand ?? '',
       unit: i.unit ?? 'pcs',
       stockPurpose: normalizeStockPurpose(i.stockPurpose ?? i.stock_purpose),
@@ -310,8 +311,12 @@ const App: React.FC = () => {
   const filteredItems = useMemo(() => {
     return items.filter(item => {
       const matchesCategory = categoryFilter === 'All' || item.category === categoryFilter;
-      const matchesSearch = item.name.toLowerCase().includes(searchFilter.toLowerCase()) || 
-                            (item.brand && item.brand.toLowerCase().includes(searchFilter.toLowerCase()));
+      const q = searchFilter.toLowerCase();
+      const matchesSearch =
+        item.name.toLowerCase().includes(q) ||
+        (item.brand && item.brand.toLowerCase().includes(q)) ||
+        (item.itemCode && item.itemCode.toLowerCase().includes(q)) ||
+        item.category.toLowerCase().includes(q);
       return matchesCategory && matchesSearch;
     });
   }, [items, categoryFilter, searchFilter]);
@@ -770,10 +775,12 @@ const App: React.FC = () => {
     if (!win) return;
     const rows = filteredItems.map(item => `
       <tr>
-        <td>${item.name}</td>
-        <td>${item.brand || '-'}</td>
+        <td>${item.itemCode || '—'}</td>
         <td>${item.category}</td>
-        <td style="text-align:right">${item.quantity} ${item.unit || 'pcs'}</td>
+        <td>${item.name}</td>
+        <td>${item.brand || '—'}</td>
+        <td>${item.unit || 'pcs'}</td>
+        <td style="text-align:right">${item.quantity}</td>
         <td style="text-align:right">₱${item.unitPrice.toFixed(2)}</td>
         <td style="text-align:right">₱${(item.quantity * item.unitPrice).toFixed(2)}</td>
       </tr>
@@ -799,7 +806,7 @@ const App: React.FC = () => {
           <p class="date">Generated on ${new Date().toLocaleString()}</p>
           <table>
             <thead>
-              <tr><th>Item</th><th>Brand</th><th>Category</th><th align="right">Qty</th><th align="right">Price</th><th align="right">Total</th></tr>
+              <tr><th>Item code</th><th>Product type</th><th>Product name</th><th>Brand</th><th>UOM</th><th align="right">Qty</th><th align="right">Price</th><th align="right">Total</th></tr>
             </thead>
             <tbody>${rows}</tbody>
           </table>

@@ -10,7 +10,9 @@ interface ItemDetailsProps {
 }
 
 function itemPickerLabel(item: InventoryItem): string {
-  return item.brand ? `${item.name} (${item.brand})` : item.name;
+  const code = item.itemCode?.trim();
+  const name = item.brand ? `${item.name} (${item.brand})` : item.name;
+  return code ? `${code} · ${name}` : name;
 }
 
 export const ItemDetails: React.FC<ItemDetailsProps> = ({ items, transactions }) => {
@@ -29,7 +31,7 @@ export const ItemDetails: React.FC<ItemDetailsProps> = ({ items, transactions })
     const q = searchInput.trim().toLowerCase();
     if (!q) return sortedItems;
     return sortedItems.filter((item) => {
-      const hay = [item.name, item.brand, item.category, item.description]
+      const hay = [item.itemCode, item.name, item.brand, item.category, item.description]
         .filter(Boolean)
         .join(' ')
         .toLowerCase();

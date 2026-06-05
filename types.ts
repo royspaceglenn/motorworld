@@ -31,8 +31,11 @@ export const STOCK_PURPOSE_META: Record<
 
 export interface InventoryItem {
   id: string;
+  /** SKU / internal item code shown in inventory. */
+  itemCode?: string;
   name: string;
   brand: string;
+  /** Product type (e.g. Oil, Filter, Tire). */
   category: string;
   quantity: number;
   unit: string; // Added unit field (e.g., pcs, kg, liters)

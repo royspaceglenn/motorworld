@@ -314,6 +314,7 @@ export const activityApi = {
 export const itemsApi = {
   list: async () => ({ items: await listShopDocs<InventoryItemApi>(FIRESTORE_COLLECTIONS.items, 'name', 'asc') }),
   create: async (body: {
+    itemCode?: string;
     name: string;
     brand?: string;
     category: string;
@@ -332,6 +333,7 @@ export const itemsApi = {
     const cap = Number(body.capitalPrice ?? body.unitPrice ?? 0);
     return upsertShopDoc<InventoryItemApi>(FIRESTORE_COLLECTIONS.items, {
       id: crypto.randomUUID(),
+      itemCode: body.itemCode?.trim().toUpperCase() ?? '',
       name: body.name,
       brand: body.brand ?? '',
       category: body.category,

@@ -109,6 +109,7 @@ const AutocompleteInput = ({ label, value, onChange, options, placeholder, requi
 
 export const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose, onSave, editItem, existingItems }) => {
   const [formData, setFormData] = useState<Partial<InventoryItem>>({
+    itemCode: '',
     name: '',
     brand: '',
     category: '',
@@ -144,6 +145,7 @@ export const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose, onS
       setMinStockInput(min < 0 ? '0' : String(min));
     } else {
       setFormData({
+        itemCode: '',
         name: '',
         brand: '',
         category: '',
@@ -167,6 +169,10 @@ export const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose, onS
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    if (!String(formData.itemCode ?? '').trim()) {
+      setError('Item code is required.');
+      return;
+    }
     setSubmitting(true);
     try {
       const cap =
@@ -183,7 +189,13 @@ export const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose, onS
         minStockLevel = Number.isNaN(minParsed) ? 0 : Math.max(0, minParsed);
       }
       await Promise.resolve(
-        onSave({ ...formData, quantity, capitalPrice: cap, minStockLevel })
+        onSave({
+          ...formData,
+          itemCode: String(formData.itemCode ?? '').trim().toUpperCase(),
+          quantity,
+          capitalPrice: cap,
+          minStockLevel,
+        })
       );
       onClose();
     } catch (err) {
@@ -203,6 +215,9 @@ export const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose, onS
       setGenerating(false);
   }
 
+  const uniqueItemCodes = Array.from(
+    new Set(existingItems.map((i) => i.itemCode).filter((c): c is string => Boolean(c)))
+  ).sort();
   const uniqueNames = Array.from(new Set(existingItems.map(i => i.name))).sort();
   const uniqueBrands = Array.from(new Set(existingItems.map(i => i.brand).filter(b => b))).sort();
   const uniqueCategories = Array.from(new Set(existingItems.map(i => i.category))).sort();
@@ -241,14 +256,36 @@ export const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose, onS
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
             {error && <InlineAlert message={error} />}
             <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <AutocompleteInput
+                        label="Item code"
+                        value={formData.itemCode ?? ''}
+                        onChange={(val: string) => setFormData({ ...formData, itemCode: val.toUpperCase() })}
+                        options={uniqueItemCodes}
+                        required
+                        placeholder="e.g. MW-OIL-001"
+                    />
+                </div>
+
+                <div>
+                     <AutocompleteInput 
+                        label="Product type"
+                        value={formData.category}
+                        onChange={(val: string) => setFormData({ ...formData, category: val })}
+                        options={uniqueCategories}
+                        required
+                        placeholder="e.g. Engine oil"
+                    />
+                </div>
+
                 <div className="col-span-2">
                     <AutocompleteInput 
-                        label="Item Name"
+                        label="Product name"
                         value={formData.name}
                         onChange={(val: string) => setFormData({ ...formData, name: val })}
                         options={uniqueNames}
                         required
-                        placeholder="e.g. Wireless Mouse"
+                        placeholder="e.g. 5W-30 Synthetic 4L"
                     />
                 </div>
 
@@ -258,18 +295,17 @@ export const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose, onS
                         value={formData.brand}
                         onChange={(val: string) => setFormData({ ...formData, brand: val })}
                         options={uniqueBrands}
-                        placeholder="e.g. Logitech"
+                        placeholder="e.g. Castrol"
                     />
                 </div>
-                
+
                 <div>
-                     <AutocompleteInput 
-                        label="Category"
-                        value={formData.category}
-                        onChange={(val: string) => setFormData({ ...formData, category: val })}
-                        options={uniqueCategories}
-                        required
-                        placeholder="e.g. Electronics"
+                    <AutocompleteInput 
+                        label="UOM"
+                        value={formData.unit}
+                        onChange={(val: string) => setFormData({ ...formData, unit: val })}
+                        options={uniqueUnits}
+                        placeholder="e.g. pcs, bottle"
                     />
                 </div>
 
@@ -305,16 +341,6 @@ export const AddItemModal: React.FC<AddItemModalProps> = ({ isOpen, onClose, onS
                       );
                     })}
                   </div>
-                </div>
-
-                <div>
-                    <AutocompleteInput 
-                        label="Unit Type"
-                        value={formData.unit}
-                        onChange={(val: string) => setFormData({ ...formData, unit: val })}
-                        options={uniqueUnits}
-                        placeholder="e.g. pcs, kg"
-                    />
                 </div>
 
                 <div>

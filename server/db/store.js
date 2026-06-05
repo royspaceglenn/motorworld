@@ -173,6 +173,7 @@ function itemToApi(item) {
   const stockPurpose = purposeRaw === 'for_supply' ? 'for_supply' : 'for_sale';
   return {
     id: item.id,
+    itemCode: normalizeString(item.item_code ?? item.itemCode),
     name: normalizeString(item.name, 'Untitled Item'),
     brand: normalizeString(item.brand),
     category: normalizeString(item.category, 'Uncategorized'),
@@ -683,6 +684,7 @@ export async function createItem(itemData) {
   const items = await collectionsBackend.readCollection(COLLECTIONS.items, []);
   const created = {
     id: itemData.id || crypto.randomUUID(),
+    item_code: normalizeString(itemData.itemCode ?? itemData.item_code),
     name: itemData.name,
     brand: itemData.brand || '',
     category: itemData.category || 'Uncategorized',
@@ -714,6 +716,10 @@ export async function updateItem(id, patch) {
   if (index === -1) return null;
   items[index] = {
     ...items[index],
+    item_code:
+      patch.itemCode !== undefined || patch.item_code !== undefined
+        ? normalizeString(patch.itemCode ?? patch.item_code)
+        : items[index].item_code ?? items[index].itemCode ?? '',
     name: patch.name ?? items[index].name,
     brand: patch.brand ?? items[index].brand,
     category: patch.category ?? items[index].category,
