@@ -1744,7 +1744,7 @@ const App: React.FC = () => {
                   )}
                 </div>
 
-                <Button onClick={handlePrintHistory} variant="secondary" className="hidden xl:flex whitespace-nowrap">
+                <Button onClick={printHistoryLog} variant="secondary" className="hidden xl:flex whitespace-nowrap">
                     <Printer className="w-4 h-4" />
                     Print Log
                 </Button>
