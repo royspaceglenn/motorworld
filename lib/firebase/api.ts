@@ -837,6 +837,33 @@ export const systemApi = {
   },
 };
 
+export const payrollApi = {
+  listEmployees: async () => {
+    throw new Error('Employee payroll requires the REST API backend, not Firebase.');
+  },
+  createEmployee: async () => {
+    throw new Error('Employee payroll requires the REST API backend, not Firebase.');
+  },
+  updateEmployee: async () => {
+    throw new Error('Employee payroll requires the REST API backend, not Firebase.');
+  },
+  deleteEmployee: async () => {
+    throw new Error('Employee payroll requires the REST API backend, not Firebase.');
+  },
+  listRuns: async () => {
+    throw new Error('Employee payroll requires the REST API backend, not Firebase.');
+  },
+  getRun: async () => {
+    throw new Error('Employee payroll requires the REST API backend, not Firebase.');
+  },
+  preview: async () => {
+    throw new Error('Employee payroll requires the REST API backend, not Firebase.');
+  },
+  postRun: async () => {
+    throw new Error('Employee payroll requires the REST API backend, not Firebase.');
+  },
+};
+
 export const bookingsApi = {
   list: async () => {
     throw new Error('Online bookings require the REST API backend, not Firebase.');

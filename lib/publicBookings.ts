@@ -1,3 +1,5 @@
+import { publicApiUrl, readPublicApiError } from './publicApi';
+
 export interface SubmitOnlineBookingPayload {
   fullName: string;
   phone: string;
@@ -12,17 +14,17 @@ export interface SubmitOnlineBookingPayload {
 export async function submitMotorWorldOnlineBooking(
   payload: SubmitOnlineBookingPayload
 ): Promise<{ bookingId: string; message: string }> {
-  const res = await fetch('/api/public/motorworld/bookings', {
+  const res = await fetch(publicApiUrl('/api/public/motorworld/bookings'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify(payload),
   });
-  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error((data as { error?: string }).error || 'Could not submit booking.');
+    throw new Error(await readPublicApiError(res, 'Could not submit booking.'));
   }
+  const data = (await res.json().catch(() => ({}))) as { bookingId?: string; message?: string };
   return {
-    bookingId: String((data as { bookingId?: string }).bookingId || ''),
-    message: String((data as { message?: string }).message || 'Booking received.'),
+    bookingId: String(data.bookingId || ''),
+    message: String(data.message || 'Booking received.'),
   };
 }

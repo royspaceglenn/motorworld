@@ -226,6 +226,61 @@ export interface Vehicle {
   createdAt?: string;
 }
 
+/** Staff profile for DTR import and payroll computation. */
+export interface Employee {
+  id: string;
+  /** ID on the biometric / DTR device export. */
+  employeeCode: string;
+  fullName: string;
+  position?: string;
+  /** Daily basic pay used when computing salary from DTR. */
+  dailyRate: number;
+  standardHoursPerDay?: number;
+  overtimeMultiplier?: number;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PayrollLine {
+  employeeId?: string | null;
+  employeeCode: string;
+  employeeName: string;
+  daysWorked: number;
+  regularHours: number;
+  overtimeHours: number;
+  lateMinutes: number;
+  absentDays: number;
+  totalHours: number;
+  dailyRate: number;
+  hourlyRate: number;
+  grossPay: number;
+  deductions: number;
+  netPay: number;
+  matched: boolean;
+  expenseId?: string | null;
+}
+
+export type PayrollRunStatus = 'draft' | 'posted';
+
+export interface PayrollRun {
+  id: string;
+  shopId?: string | null;
+  periodLabel: string;
+  periodStart: string;
+  periodEnd: string;
+  status: PayrollRunStatus;
+  sourceFileName?: string | null;
+  importedAt: string;
+  importedBy?: string | null;
+  lines: PayrollLine[];
+  totalGross: number;
+  totalNet: number;
+  expenseIds?: string[];
+  postedAt?: string | null;
+  postedBy?: string | null;
+}
+
 export type ExpenseCategory = 'Utilities' | 'Supplies' | 'Salary' | 'Maintenance' | 'Others';
 
 export interface Expense {

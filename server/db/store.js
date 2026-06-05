@@ -34,6 +34,10 @@ export const COLLECTIONS = {
   documentArchives: 'document_archives',
   /** Website service booking requests (Motor World public site). */
   onlineBookings: 'online_bookings',
+  /** Staff profiles for DTR / payroll. */
+  employees: 'employees',
+  /** Imported DTR payroll batches (posted → Salary expenses). */
+  payrollRuns: 'payroll_runs',
 };
 
 let initialized = false;
@@ -2015,6 +2019,237 @@ export async function cancelOnlineBooking(id, { cancelledBy, reason } = {}) {
   };
   await collectionsBackend.writeCollection(COLLECTIONS.onlineBookings, bookings);
   return bookingToApi(bookings[index]);
+}
+
+function employeeToApi(row) {
+  return {
+    id: row.id,
+    employeeCode: normalizeString(row.employee_code ?? row.employeeCode),
+    fullName: normalizeString(row.full_name ?? row.fullName, 'Unnamed'),
+    position: normalizeString(row.position),
+    dailyRate: normalizeNumber(row.daily_rate ?? row.dailyRate),
+    standardHoursPerDay: normalizeNumber(row.standard_hours_per_day ?? row.standardHoursPerDay ?? 8) || 8,
+    overtimeMultiplier: normalizeNumber(row.overtime_multiplier ?? row.overtimeMultiplier ?? 1.25) || 1.25,
+    isActive: row.is_active !== false && row.isActive !== false,
+    createdAt: row.created_at ?? row.createdAt ?? null,
+    updatedAt: row.updated_at ?? row.updatedAt ?? null,
+  };
+}
+
+function payrollRunToApi(row) {
+  return {
+    id: row.id,
+    shopId: row.shop_id ?? row.shopId ?? null,
+    periodLabel: normalizeString(row.period_label ?? row.periodLabel),
+    periodStart: row.period_start ?? row.periodStart ?? '',
+    periodEnd: row.period_end ?? row.periodEnd ?? '',
+    status: row.status === 'posted' ? 'posted' : 'draft',
+    sourceFileName: row.source_file_name ?? row.sourceFileName ?? null,
+    importedAt: row.imported_at ?? row.importedAt ?? nowIso(),
+    importedBy: row.imported_by ?? row.importedBy ?? null,
+    lines: Array.isArray(row.lines) ? row.lines : [],
+    totalGross: normalizeNumber(row.total_gross ?? row.totalGross),
+    totalNet: normalizeNumber(row.total_net ?? row.totalNet),
+    expenseIds: row.expense_ids ?? row.expenseIds ?? [],
+    postedAt: row.posted_at ?? row.postedAt ?? null,
+    postedBy: row.posted_by ?? row.postedBy ?? null,
+  };
+}
+
+export async function getEmployees({ activeOnly } = {}) {
+  return (await collectionsBackend.readCollection(COLLECTIONS.employees, []))
+    .map(employeeToApi)
+    .filter((e) => !activeOnly || e.isActive !== false)
+    .sort((a, b) => a.fullName.localeCompare(b.fullName, undefined, { sensitivity: 'base' }));
+}
+
+export async function getEmployeeById(id) {
+  const row = (await collectionsBackend.readCollection(COLLECTIONS.employees, [])).find((e) => e.id === id);
+  return row ? employeeToApi(row) : null;
+}
+
+export async function createEmployee(data) {
+  const employees = await collectionsBackend.readCollection(COLLECTIONS.employees, []);
+  const code = normalizeString(data.employeeCode ?? data.employee_code).toUpperCase();
+  if (!code) throw new Error('Employee code is required.');
+  if (!String(data.fullName ?? data.full_name ?? '').trim()) throw new Error('Full name is required.');
+  if (employees.some((e) => String(e.employee_code ?? e.employeeCode ?? '').toUpperCase() === code)) {
+    throw new Error('Employee code already exists.');
+  }
+  const now = nowIso();
+  const created = {
+    id: data.id || crypto.randomUUID(),
+    employee_code: code,
+    full_name: String(data.fullName ?? data.full_name).trim(),
+    position: String(data.position ?? '').trim(),
+    daily_rate: Math.max(0, normalizeNumber(data.dailyRate ?? data.daily_rate)),
+    standard_hours_per_day: Math.max(1, normalizeNumber(data.standardHoursPerDay ?? data.standard_hours_per_day ?? 8)),
+    overtime_multiplier: Math.max(1, normalizeNumber(data.overtimeMultiplier ?? data.overtime_multiplier ?? 1.25)),
+    is_active: data.isActive !== false && data.is_active !== false,
+    created_at: now,
+    updated_at: null,
+  };
+  employees.unshift(created);
+  await collectionsBackend.writeCollection(COLLECTIONS.employees, employees);
+  return employeeToApi(created);
+}
+
+export async function updateEmployee(id, patch) {
+  const employees = await collectionsBackend.readCollection(COLLECTIONS.employees, []);
+  const index = employees.findIndex((e) => e.id === id);
+  if (index === -1) return null;
+  const nextCode =
+    patch.employeeCode !== undefined || patch.employee_code !== undefined
+      ? normalizeString(patch.employeeCode ?? patch.employee_code).toUpperCase()
+      : employees[index].employee_code ?? employees[index].employeeCode;
+  if (
+    nextCode &&
+    employees.some(
+      (e, i) =>
+        i !== index && String(e.employee_code ?? e.employeeCode ?? '').toUpperCase() === nextCode
+    )
+  ) {
+    throw new Error('Employee code already exists.');
+  }
+  employees[index] = {
+    ...employees[index],
+    employee_code: nextCode || employees[index].employee_code,
+    full_name: patch.fullName ?? patch.full_name ?? employees[index].full_name ?? employees[index].fullName,
+    position: patch.position ?? employees[index].position ?? '',
+    daily_rate:
+      patch.dailyRate !== undefined || patch.daily_rate !== undefined
+        ? Math.max(0, normalizeNumber(patch.dailyRate ?? patch.daily_rate))
+        : employees[index].daily_rate ?? employees[index].dailyRate,
+    standard_hours_per_day:
+      patch.standardHoursPerDay !== undefined || patch.standard_hours_per_day !== undefined
+        ? Math.max(1, normalizeNumber(patch.standardHoursPerDay ?? patch.standard_hours_per_day))
+        : employees[index].standard_hours_per_day ?? employees[index].standardHoursPerDay ?? 8,
+    overtime_multiplier:
+      patch.overtimeMultiplier !== undefined || patch.overtime_multiplier !== undefined
+        ? Math.max(1, normalizeNumber(patch.overtimeMultiplier ?? patch.overtime_multiplier))
+        : employees[index].overtime_multiplier ?? employees[index].overtimeMultiplier ?? 1.25,
+    is_active:
+      patch.isActive !== undefined || patch.is_active !== undefined
+        ? patch.isActive !== false && patch.is_active !== false
+        : employees[index].is_active !== false,
+    updated_at: nowIso(),
+  };
+  await collectionsBackend.writeCollection(COLLECTIONS.employees, employees);
+  return employeeToApi(employees[index]);
+}
+
+export async function deleteEmployee(id) {
+  const employees = await collectionsBackend.readCollection(COLLECTIONS.employees, []);
+  if (!employees.some((e) => e.id === id)) return false;
+  await collectionsBackend.writeCollection(
+    COLLECTIONS.employees,
+    employees.filter((e) => e.id !== id)
+  );
+  return true;
+}
+
+export async function getPayrollRuns() {
+  return (await collectionsBackend.readCollection(COLLECTIONS.payrollRuns, []))
+    .map(payrollRunToApi)
+    .sort((a, b) => new Date(b.importedAt).getTime() - new Date(a.importedAt).getTime());
+}
+
+export async function getPayrollRunById(id) {
+  const row = (await collectionsBackend.readCollection(COLLECTIONS.payrollRuns, [])).find((r) => r.id === id);
+  return row ? payrollRunToApi(row) : null;
+}
+
+export async function previewPayrollFromDtr({ summaries, periodStart, periodEnd, periodLabel }) {
+  const { computePayrollFromDtr } = await import('../lib/payrollCompute.js');
+  const employees = await collectionsBackend.readCollection(COLLECTIONS.employees, []);
+  const activeEmployees = employees.filter((e) => e.is_active !== false);
+  const lines = computePayrollFromDtr(activeEmployees, summaries || []);
+  const totalGross = lines.reduce((s, l) => s + (l.grossPay || 0), 0);
+  const totalNet = lines.reduce((s, l) => s + (l.netPay || 0), 0);
+  return {
+    periodLabel: periodLabel || 'Payroll',
+    periodStart: periodStart || '',
+    periodEnd: periodEnd || '',
+    lines,
+    totalGross: Math.round(totalGross * 100) / 100,
+    totalNet: Math.round(totalNet * 100) / 100,
+  };
+}
+
+export async function createAndPostPayrollRun(data, { postedBy, recordedBy, recordedByUserId } = {}) {
+  const runs = await collectionsBackend.readCollection(COLLECTIONS.payrollRuns, []);
+  const lines = Array.isArray(data.lines) ? data.lines : [];
+  if (!lines.length) throw new Error('Payroll has no employee lines.');
+  const unmatched = lines.filter((l) => !l.matched);
+  if (unmatched.length) {
+    throw new Error(
+      `${unmatched.length} employee(s) not matched to staff profiles. Add them under Employees first.`
+    );
+  }
+  const zeroRate = lines.filter((l) => !(l.dailyRate > 0));
+  if (zeroRate.length) {
+    throw new Error('All matched employees need a daily rate set before posting payroll.');
+  }
+
+  const runId = data.id || crypto.randomUUID();
+  const now = nowIso();
+  const periodLabel = String(data.periodLabel || data.period_label || 'Payroll').trim();
+  const periodStart = String(data.periodStart || data.period_start || '').trim();
+  const periodEnd = String(data.periodEnd || data.period_end || '').trim();
+  const expenseIds = [];
+  const postedLines = [];
+
+  for (const line of lines) {
+    const net = Math.max(0, normalizeNumber(line.netPay ?? line.net_pay));
+    if (net <= 0) {
+      postedLines.push({ ...line, expenseId: null });
+      continue;
+    }
+    const title = `Salary — ${line.employeeName} (${periodLabel})`;
+    const description = [
+      `Payroll run ${runId.slice(0, 8)}`,
+      `Code: ${line.employeeCode}`,
+      `Days: ${line.daysWorked}`,
+      `Reg hrs: ${line.regularHours}`,
+      `OT hrs: ${line.overtimeHours}`,
+      line.lateMinutes ? `Late: ${line.lateMinutes} min` : '',
+      line.deductions ? `Deductions: ₱${line.deductions}` : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    const expense = await createExpense({
+      title,
+      category: 'Salary',
+      amount: net,
+      description,
+      date: periodEnd ? `${periodEnd}T12:00:00.000Z` : now,
+      recordedBy: recordedBy || postedBy || 'System',
+      recordedByUserId: recordedByUserId ?? null,
+    });
+    expenseIds.push(expense.id);
+    postedLines.push({ ...line, expenseId: expense.id });
+  }
+
+  const created = {
+    id: runId,
+    shop_id: getActiveShopId(),
+    period_label: periodLabel,
+    period_start: periodStart,
+    period_end: periodEnd,
+    status: 'posted',
+    source_file_name: data.sourceFileName ?? data.source_file_name ?? null,
+    imported_at: now,
+    imported_by: postedBy || null,
+    lines: postedLines,
+    total_gross: normalizeNumber(data.totalGross ?? data.total_gross),
+    total_net: normalizeNumber(data.totalNet ?? data.total_net),
+    expense_ids: expenseIds,
+    posted_at: now,
+    posted_by: postedBy || null,
+  };
+  runs.unshift(created);
+  await collectionsBackend.writeCollection(COLLECTIONS.payrollRuns, runs);
+  return payrollRunToApi(created);
 }
 
 export async function notifyAdminsOnlineBooking(booking) {

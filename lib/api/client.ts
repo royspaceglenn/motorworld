@@ -1,9 +1,12 @@
 import type {
+  Employee,
   Expense,
   InventoryItem,
   Loan,
   LoanPayment,
   OnlineBooking,
+  PayrollLine,
+  PayrollRun,
   Person,
   Purchase,
   Supplier,
@@ -653,6 +656,45 @@ export const paymentJournalApi = {
         offset: String(params.offset ?? 0),
       })}`
     ),
+};
+
+export const payrollApi = {
+  listEmployees: () => request<{ employees: Employee[] }>('/api/payroll/employees'),
+  createEmployee: (payload: Partial<Employee>) =>
+    request<{ employee: Employee }>('/api/payroll/employees', { method: 'POST', body: JSON.stringify(payload) }),
+  updateEmployee: (id: string, payload: Partial<Employee>) =>
+    request<{ employee: Employee }>(`/api/payroll/employees/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  deleteEmployee: (id: string) =>
+    request<{ success: boolean }>(`/api/payroll/employees/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  listRuns: () => request<{ runs: PayrollRun[] }>('/api/payroll/runs'),
+  getRun: (id: string) => request<{ run: PayrollRun }>(`/api/payroll/runs/${encodeURIComponent(id)}`),
+  preview: (payload: {
+    summaries: Record<string, unknown>[];
+    periodStart?: string;
+    periodEnd?: string;
+    periodLabel?: string;
+  }) =>
+    request<{
+      periodLabel: string;
+      periodStart: string;
+      periodEnd: string;
+      lines: PayrollLine[];
+      totalGross: number;
+      totalNet: number;
+    }>('/api/payroll/preview', { method: 'POST', body: JSON.stringify(payload) }),
+  postRun: (payload: {
+    periodLabel: string;
+    periodStart: string;
+    periodEnd: string;
+    sourceFileName?: string;
+    lines: PayrollLine[];
+    totalGross: number;
+    totalNet: number;
+  }) =>
+    request<{ run: PayrollRun }>('/api/payroll/runs/post', { method: 'POST', body: JSON.stringify(payload) }),
 };
 
 export const bookingsApi = {

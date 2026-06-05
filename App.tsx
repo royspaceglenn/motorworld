@@ -47,6 +47,7 @@ import { BillingStatementView } from './components/BillingStatementView';
 import { BillingStatementPrintModal } from './components/BillingStatementPrintModal';
 import { DocumentArchivesView } from './components/DocumentArchivesView';
 import { OnlineBookingsView } from './components/OnlineBookingsView';
+import { EmployeeSalaryView } from './components/EmployeeSalaryView';
 import { DocumentPrintPreviewModal } from './components/DocumentPrintPreviewModal';
 import { subscribeDocumentPreview } from './lib/documentPreviewBus';
 import type { DocumentPreviewDoc } from './lib/documentPreviewBus';
@@ -89,6 +90,7 @@ import {
   Archive,
   LogOut,
   CalendarClock,
+  Wallet,
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
@@ -107,7 +109,8 @@ type AppView =
   | 'purchasing'
   | 'pos'
   | 'document_archives'
-  | 'online_bookings';
+  | 'online_bookings'
+  | 'employee_salary';
 
 const App: React.FC = () => {
   const { user, logout } = useAuth();
@@ -941,6 +944,10 @@ const App: React.FC = () => {
       title: 'Online bookings',
       description: 'Website service requests — confirm to create customer records and service sales.',
     },
+    employee_salary: {
+      title: 'Employee salary',
+      description: 'Import DTR Excel, compute payroll from attendance, and post salaries as company expenses.',
+    },
   };
 
   const activeShopId = getStoredActiveShopId();
@@ -973,6 +980,7 @@ const App: React.FC = () => {
         { id: 'receivables', label: 'Receivables', icon: CreditCard },
         { id: 'accounts', label: 'Accounts', icon: UserCircle },
         { id: 'expenses', label: 'Expenses', icon: Receipt },
+        { id: 'employee_salary', label: 'Employee salary', icon: Wallet },
       ],
     },
     ...(isAdmin
@@ -1630,6 +1638,10 @@ const App: React.FC = () => {
         {/* --- EXPENSES --- */}
         {view === 'expenses' && (
           <ExpensesView canEdit={canEdit} />
+        )}
+
+        {view === 'employee_salary' && (
+          <EmployeeSalaryView canEdit={canEdit} />
         )}
 
         {/* --- ACTIVITY LOG --- */}
