@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { InventoryItem, Person, Vehicle } from '../types';
 import { personsApi, vehiclesApi } from '../lib/api/adminData';
+import { todayDateInputValue } from '../lib/transactionDate';
 import { X, ArrowUpRight, ChevronDown } from 'lucide-react';
 import { Button } from './ui/Button';
 import { InlineAlert } from './ui/InlineAlert';
@@ -25,7 +26,9 @@ interface ReleaseModalProps {
     dueDays?: number,
     creditOptions?: { downPayment: number; interestRate: number; paymentSchedule: 'weekly' | 'monthly' },
     personId?: string,
-    vehicleId?: string
+    vehicleId?: string,
+    /** YYYY-MM-DD — actual sale date for reports and receivables. */
+    transactionDate?: string
   ) => void | Promise<void>;
   item: InventoryItem | null;
   items: InventoryItem[];
@@ -62,6 +65,7 @@ export const ReleaseModal: React.FC<ReleaseModalProps> = ({ isOpen, onClose, onC
   const [servicePrice, setServicePrice] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [transactionDate, setTransactionDate] = useState(todayDateInputValue);
 
   const vehiclesForSelectedPerson = selectedPersonId
     ? vehicles.filter((v) => v.personId === selectedPersonId)
@@ -75,6 +79,7 @@ export const ReleaseModal: React.FC<ReleaseModalProps> = ({ isOpen, onClose, onC
     if (isOpen) {
       setSubmitting(false);
       setError(null);
+      setTransactionDate(todayDateInputValue());
       if (item) {
         setItemType('Product');
         setPrice(item.unitPrice);
@@ -191,7 +196,22 @@ export const ReleaseModal: React.FC<ReleaseModalProps> = ({ isOpen, onClose, onC
           throw new Error('Select a valid item and quantity.');
         }
         await Promise.resolve(
-          onConfirm(itemType, activeItem.id, activeItem.name, quantity, price, recipientName, note, modeOfPayment, other, days, creditOpts, personId, vehicleId)
+          onConfirm(
+            itemType,
+            activeItem.id,
+            activeItem.name,
+            quantity,
+            price,
+            recipientName,
+            note,
+            modeOfPayment,
+            other,
+            days,
+            creditOpts,
+            personId,
+            vehicleId,
+            transactionDate
+          )
         );
       } else {
         const name = serviceName.trim();
@@ -199,7 +219,22 @@ export const ReleaseModal: React.FC<ReleaseModalProps> = ({ isOpen, onClose, onC
         const pr = servicePrice >= 0 ? servicePrice : 0;
         if (!name) throw new Error('Enter a servicing name.');
         await Promise.resolve(
-          onConfirm(itemType, null, name, qty, pr, recipientName, note, modeOfPayment, other, days, creditOpts, personId, vehicleId)
+          onConfirm(
+            itemType,
+            null,
+            name,
+            qty,
+            pr,
+            recipientName,
+            note,
+            modeOfPayment,
+            other,
+            days,
+            creditOpts,
+            personId,
+            vehicleId,
+            transactionDate
+          )
         );
       }
 
@@ -214,9 +249,16 @@ export const ReleaseModal: React.FC<ReleaseModalProps> = ({ isOpen, onClose, onC
   const productValid = itemType === 'Product' && activeItem && quantity > 0 && quantity <= (activeItem?.quantity ?? 0);
   const serviceValid = itemType === 'Service' && serviceName.trim().length > 0;
   const hasCustomer = selectedPersonId || customerInput.trim();
-  const canSubmit = modeOfPayment && (modeOfPayment !== 'Others' || modeOfPaymentOther.trim()) && hasCustomer
-    && (modeOfPayment !== 'Credit' || (recipient.trim() || persons.find((p) => p.id === selectedPersonId)?.fullName || customerInput.trim()))
-    && (productValid || serviceValid);
+  const canSubmit =
+    transactionDate.trim() &&
+    modeOfPayment &&
+    (modeOfPayment !== 'Others' || modeOfPaymentOther.trim()) &&
+    hasCustomer &&
+    (modeOfPayment !== 'Credit' ||
+      recipient.trim() ||
+      persons.find((p) => p.id === selectedPersonId)?.fullName ||
+      customerInput.trim()) &&
+    (productValid || serviceValid);
 
   const personSuggestions = customerInput.trim()
     ? persons.filter((p) => (p.fullName ?? '').toLowerCase().includes(customerInput.trim().toLowerCase()))
@@ -579,6 +621,23 @@ export const ReleaseModal: React.FC<ReleaseModalProps> = ({ isOpen, onClose, onC
             </div>
           </div>
           )}
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Sale / transaction date <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="date"
+              required
+              max={todayDateInputValue()}
+              className="w-full px-3 py-2 bg-white text-slate-900 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+              value={transactionDate}
+              onChange={(e) => setTransactionDate(e.target.value)}
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Use the real sale date when recording a past transaction. Sales summary and receivables use this date.
+            </p>
+          </div>
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Mode of Payment <span className="text-red-500">*</span></label>

@@ -372,7 +372,13 @@ export const authApi = {
 
 export const systemApi = {
   clearStoreData: (shopId: string) =>
-    request<{ ok: boolean; shopId: string; collectionsRemoved: number }>('/api/system/clear-store-data', {
+    request<{
+      ok: boolean;
+      shopId: string;
+      collectionsRemoved: number;
+      legacyAlsoCleared?: boolean;
+      storeLabel?: string;
+    }>('/api/system/clear-store-data', {
       method: 'POST',
       body: JSON.stringify({ shopId }),
     }),

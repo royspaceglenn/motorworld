@@ -23,6 +23,7 @@ import {
   buildBillingStatementHtml,
   buildTransactionBillingStatementHtml,
 } from '../lib/transactionBillingStatementPrint';
+import { dateInputToIsoTimestamp, formatDateInputForDisplay, todayDateInputValue } from '../lib/transactionDate';
 import { ShoppingCart, ChevronDown, Banknote, FileText, CreditCard, Plus, Trash2, ScrollText, Printer } from 'lucide-react';
 
 export type POSPaymentType = 'Cash' | 'Purchase Order' | 'Accounts Receivable' | 'Cheque';
@@ -68,19 +69,6 @@ function qtyInCartForProduct(cart: CartLine[], itemId: string) {
   return cart
     .filter((l) => l.itemType === 'Product' && l.itemId === itemId)
     .reduce((s, l) => s + l.qty, 0);
-}
-
-function todayDateInputValue(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function dateInputToIsoTimestamp(dateStr: string): string {
-  const raw = String(dateStr || '').trim();
-  if (!raw) return new Date().toISOString();
-  const d = new Date(raw.length === 10 ? `${raw}T12:00:00` : raw);
-  if (Number.isNaN(d.getTime())) return new Date().toISOString();
-  return d.toISOString();
 }
 
 export const POSView: React.FC<POSViewProps> = ({
@@ -539,9 +527,9 @@ export const POSView: React.FC<POSViewProps> = ({
         lineRows,
         totalDue: grandTotal,
         footerRef: refPart,
-        footerDate: new Date().toLocaleString(),
+        footerDate: formatDateInputForDisplay(transactionDate),
         customerName: customerLabel || undefined,
-        documentDate: new Date().toLocaleDateString(),
+        documentDate: formatDateInputForDisplay(transactionDate),
       },
       billingLetterhead,
       billingPrintOptions
@@ -595,6 +583,25 @@ export const POSView: React.FC<POSViewProps> = ({
               {error}
             </div>
           )}
+
+          <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 p-4">
+            <label className="block text-sm font-medium text-slate-800 mb-1">
+              Sale / transaction date <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="date"
+              required
+              max={todayDateInputValue()}
+              className="w-full max-w-xs px-3 py-2 border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500"
+              value={transactionDate}
+              onChange={(e) => setTransactionDate(e.target.value)}
+            />
+            <p className="text-xs text-slate-600 mt-2">
+              Pick the <strong>actual sale date</strong> when encoding a past transaction (e.g. sold last night, entered
+              today). This date is used on receipts, accounts receivable, dashboard activity, and{' '}
+              <strong>Sales summary</strong> reports.
+            </p>
+          </div>
 
           <div className="relative">
             <label className="block text-sm font-medium text-slate-700 mb-1">Customer <span className="text-red-500">*</span></label>
@@ -911,23 +918,6 @@ export const POSView: React.FC<POSViewProps> = ({
               </p>
             </div>
           )}
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Transaction date <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="date"
-              required
-              className="w-full max-w-xs px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500"
-              value={transactionDate}
-              onChange={(e) => setTransactionDate(e.target.value)}
-            />
-            <p className="text-xs text-slate-500 mt-1">
-              Use the actual sale date if you are encoding this transaction later (e.g. next day). Receipts, inventory,
-              and accounts receivable will use this date.
-            </p>
-          </div>
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">Payment <span className="text-red-500">*</span></label>

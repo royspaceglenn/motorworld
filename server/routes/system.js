@@ -2,7 +2,7 @@ import express from 'express';
 import { requireAdmin } from '../middleware/rbac.js';
 import { deleteCollectionsByShopPrefix } from '../db/shopCollections.js';
 import { deleteAllNonUserCollections } from '../db/collectionsBackend.js';
-import { isValidShopId, SHOP_IDS, DEFAULT_SHOP_ID } from '../lib/shops.js';
+import { isValidShopId, SHOP_IDS, DEFAULT_SHOP_ID, shopLabel } from '../lib/shops.js';
 import { runWithShop } from '../lib/shopContext.js';
 import { logActivity } from '../services/activityLogger.js';
 import { scheduleViewerSync } from '../services/firebaseViewerSync.js';
@@ -56,7 +56,14 @@ router.post('/clear-store-data', requireAdmin, async (req, res) => {
       await logActivity(req.user.id, 'CLEAR_STORE_DATA', { shopId, collectionsRemoved: removed });
     });
     scheduleViewerSync();
-    return res.json({ ok: true, shopId, collectionsRemoved: removed });
+    return res.json({
+      ok: true,
+      shopId,
+      collectionsRemoved: removed,
+      /** Motor World clear also deletes legacy unprefixed rows so data cannot reappear on reload. */
+      legacyAlsoCleared: shopId === DEFAULT_SHOP_ID,
+      storeLabel: shopLabel(shopId),
+    });
   } catch (e) {
     return res.status(500).json({ error: e?.message || 'Failed to clear store data.' });
   }

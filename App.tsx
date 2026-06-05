@@ -26,6 +26,7 @@ import { HistoryTable } from './components/HistoryTable';
 import { AddItemModal } from './components/AddItemModal';
 import { ReleaseModal } from './components/ReleaseModal';
 import { IssueModal } from './components/IssueModal';
+import { dateInputToIsoTimestamp, todayDateInputValue } from './lib/transactionDate';
 import { ReturnModal } from './components/ReturnModal';
 import { ReturnFromSalesModal } from './components/ReturnFromSalesModal';
 import { AddStockModal } from './components/AddStockModal';
@@ -514,9 +515,10 @@ const App: React.FC = () => {
     dueDays?: number,
     creditOptions?: { downPayment: number; interestRate: number; paymentSchedule: 'weekly' | 'monthly' },
     personId?: string,
-    vehicleId?: string
+    vehicleId?: string,
+    transactionDateYmd?: string
   ) => {
-     const now = new Date().toISOString();
+     const saleTimestamp = dateInputToIsoTimestamp(transactionDateYmd || todayDateInputValue());
      const transaction: Transaction = {
         id: crypto.randomUUID().slice(0, 8).toUpperCase(),
         itemId: itemId ?? undefined,
@@ -525,7 +527,7 @@ const App: React.FC = () => {
         quantityChange: -qty,
         unitPriceAtTime: price,
         totalValue: qty * price,
-        timestamp: now,
+        timestamp: saleTimestamp,
         recipient: recipient,
         note: note,
         modeOfPayment: modeOfPayment,
@@ -536,6 +538,7 @@ const App: React.FC = () => {
      };
      const createPayload = {
        ...transaction,
+       transactionDate: saleTimestamp,
        itemType,
        dueDays: modeOfPayment === 'Credit' ? dueDays : undefined,
        downPayment: creditOptions?.downPayment,

@@ -6,6 +6,25 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { isEmergencyDbBypass } from '../lib/emergencyAuth.js';
+import { DEFAULT_SHOP_ID } from '../lib/shops.js';
+
+/** Unprefixed rows from before multi-store; still read for Motor World until deleted. */
+const LEGACY_UNPREFIXED_COLLECTIONS = [
+  'items',
+  'transactions',
+  'activity_logs',
+  'notifications',
+  'persons',
+  'vehicles',
+  'expenses',
+  'suppliers',
+  'purchases',
+  'soas',
+  'soa_payments',
+  'loans',
+  'loan_payments',
+  'document_archives',
+];
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -265,22 +284,44 @@ export async function seedEmptyCollections(collectionNames) {
 }
 
 /**
- * Remove all collection rows whose name starts with `${shopId}::` (multi-store isolation).
- * Does not touch global `users` or legacy unprefixed rows.
+ * Remove all collection rows for one store (`${shopId}::…`).
+ * For Motor World, also removes legacy unprefixed rows (`items`, `transactions`, …) so data
+ * cannot reappear via the automatic legacy migration on read.
  */
 export async function deleteCollectionsByShopPrefix(shopId) {
   if (isEmergencyDbBypass()) return 0;
-  const prefix = `${String(shopId || '').trim()}::`;
-  if (!prefix || prefix === '::') return 0;
+  const id = String(shopId || '').trim();
+  const prefix = `${id}::`;
+  if (!id || prefix === '::') return 0;
   await initCollectionsBackend();
   const like = `${prefix}%`;
+  const includeLegacy = id === DEFAULT_SHOP_ID;
   if (mode === 'postgres') {
     if (neonSql) {
       await neonSql`DELETE FROM collections WHERE name LIKE ${like}`;
-      return 0;
+      if (includeLegacy) {
+        for (const legacyName of LEGACY_UNPREFIXED_COLLECTIONS) {
+          await neonSql`DELETE FROM collections WHERE name = ${legacyName}`;
+        }
+      }
+      return -1;
+    }
+    if (includeLegacy) {
+      const { rowCount } = await pgPool.query(
+        `DELETE FROM collections WHERE name LIKE $1 OR name = ANY($2::text[])`,
+        [like, LEGACY_UNPREFIXED_COLLECTIONS]
+      );
+      return rowCount ?? 0;
     }
     const { rowCount } = await pgPool.query('DELETE FROM collections WHERE name LIKE $1', [like]);
     return rowCount ?? 0;
+  }
+  if (includeLegacy) {
+    const placeholders = LEGACY_UNPREFIXED_COLLECTIONS.map(() => '?').join(', ');
+    const info = sqliteDb
+      .prepare(`DELETE FROM collections WHERE name LIKE ? OR name IN (${placeholders})`)
+      .run(like, ...LEGACY_UNPREFIXED_COLLECTIONS);
+    return Number(info.changes || 0);
   }
   const info = sqliteDb.prepare('DELETE FROM collections WHERE name LIKE ?').run(like);
   return Number(info.changes || 0);

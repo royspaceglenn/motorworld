@@ -238,7 +238,9 @@ export const ManageUsersView: React.FC = () => {
           <h3 className="text-sm font-bold uppercase tracking-wide text-red-900">Danger zone — clear one store</h3>
           <p className="mt-2 text-sm text-red-800/90">
             Removes inventory, transactions, customers, vehicles, receivables, document archives, and related data for the
-            selected store. <strong>User accounts are kept.</strong> This cannot be undone.
+            selected store only. For <strong>Motor World</strong>, legacy unprefixed data is removed too so old records
+            cannot reappear. <strong>User accounts are kept.</strong> To wipe every store at once, use the section below.
+            This cannot be undone.
           </p>
           <div className="mt-4 flex flex-wrap items-end gap-3">
             <div>
@@ -260,9 +262,13 @@ export const ManageUsersView: React.FC = () => {
               disabled={clearBusy}
               onClick={async () => {
                 const label = SHOPS.find((s) => s.id === clearShopId)?.shortLabel ?? clearShopId;
+                const motorWorldExtra =
+                  clearShopId === 'motorworld'
+                    ? '\n\nMotor World: legacy database rows are removed too so inventory and history will not come back after reload.'
+                    : '';
                 if (
                   !window.confirm(
-                    `Permanently delete ALL business data for "${label}"?\n\nType mentally: this cannot be undone.`
+                    `Permanently delete ALL business data for "${label}"?${motorWorldExtra}\n\nUser accounts are kept. This cannot be undone.`
                   )
                 ) {
                   return;
@@ -271,7 +277,13 @@ export const ManageUsersView: React.FC = () => {
                 setClearMsg(null);
                 try {
                   const res = await systemApi.clearStoreData(clearShopId);
-                  setClearMsg(`Cleared ${res.collectionsRemoved} data bucket(s). Reloading…`);
+                  const n = res.collectionsRemoved;
+                  const legacyNote = res.legacyAlsoCleared ? ' Legacy rows removed.' : '';
+                  setClearMsg(
+                    n >= 0
+                      ? `Cleared ${n} data bucket(s) for ${res.storeLabel ?? label}.${legacyNote} Reloading…`
+                      : `Store clear completed for ${res.storeLabel ?? label}.${legacyNote} Reloading…`
+                  );
                   window.setTimeout(() => window.location.reload(), 800);
                 } catch (e) {
                   setClearMsg(e instanceof Error ? e.message : 'Clear failed.');
