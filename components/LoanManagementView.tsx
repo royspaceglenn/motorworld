@@ -71,6 +71,7 @@ export const LoanManagementView: React.FC<LoanManagementViewProps> = ({
   /** When set, receivable modal shows payment journal rows for this customer (opened via customer name click). */
   const [journalHighlightCustomer, setJournalHighlightCustomer] = useState<string | null>(null);
   const [chequeBusyId, setChequeBusyId] = useState<string | null>(null);
+  const [chequeActionError, setChequeActionError] = useState<string | null>(null);
   const [usingTransactionFallback, setUsingTransactionFallback] = useState(false);
 
   const chequeQueue = useMemo(() => {
