@@ -1367,9 +1367,10 @@ export async function updatePerson(id, patch) {
 
 export async function deletePerson(id) {
   const persons = await collectionsBackend.readCollection(COLLECTIONS.persons, []);
-  const loans = (await getLoans()).filter((loan) => loan.personId === id && loan.status !== 'paid' && loan.status !== 'cash');
+  const { loans } = await getLoans();
+  const openLoans = loans.filter((loan) => loan.personId === id && loan.status !== 'paid' && loan.status !== 'cash');
   const soas = (await collectionsBackend.readCollection(COLLECTIONS.soas, [])).filter((soa) => (soa.person_id ?? soa.personId) === id);
-  if (loans.length > 0 || soas.length > 0) {
+  if (openLoans.length > 0 || soas.length > 0) {
     throw new Error('Cannot delete person with linked SOA or loan records.');
   }
   await collectionsBackend.writeCollection(
@@ -1427,7 +1428,8 @@ export async function updateVehicle(id, patch) {
 
 export async function deleteVehicle(id) {
   const hasTx = (await getTransactions()).some((tx) => tx.vehicleId === id);
-  const hasLoan = (await getLoans()).some((loan) => loan.vehicleId === id);
+  const { loans } = await getLoans();
+  const hasLoan = loans.some((loan) => loan.vehicleId === id);
   if (hasTx || hasLoan) {
     throw new Error('Cannot delete vehicle with linked transactions or loans.');
   }
@@ -1761,38 +1763,85 @@ export async function getSoaPayments(soaId) {
     .sort((a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime());
 }
 
-export async function getLoans({ status, customerName, limit, offset = 0 } = {}) {
-  let loans = (await collectionsBackend.readCollection(COLLECTIONS.loans, [])).map(loanToApi);
+export async function getLoans({
+  status,
+  customerName,
+  limit,
+  offset = 0,
+  includePayments = false,
+} = {}) {
+  const [rawLoans, rawTransactions] = await Promise.all([
+    collectionsBackend.readCollection(COLLECTIONS.loans, []),
+    collectionsBackend.readCollection(COLLECTIONS.transactions, []),
+  ]);
+
+  const shopIdByTxId = new Map();
+  for (const tx of rawTransactions) {
+    if (tx?.id) shopIdByTxId.set(tx.id, tx.shop_id ?? tx.shopId ?? null);
+  }
+
+  let loanPaymentsByLoanId = null;
+  if (includePayments) {
+    const rawPayments = await collectionsBackend.readCollection(COLLECTIONS.loanPayments, []);
+    loanPaymentsByLoanId = new Map();
+    for (const payment of rawPayments) {
+      const loanId = payment.loan_id ?? payment.loanId;
+      if (!loanId) continue;
+      if (!loanPaymentsByLoanId.has(loanId)) loanPaymentsByLoanId.set(loanId, []);
+      loanPaymentsByLoanId.get(loanId).push(payment);
+    }
+  }
+
+  let loans = rawLoans.map(loanToApi);
   if (status) loans = loans.filter((loan) => loan.status === status);
   if (customerName) {
     const needle = String(customerName).toLowerCase();
     loans = loans.filter((loan) => String(loan.customerName).toLowerCase().includes(needle));
   }
-  loans = loans.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  if (typeof limit === 'number') {
+  loans.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  const total = loans.length;
+  if (typeof limit === 'number' && limit > 0) {
     loans = loans.slice(offset, offset + limit);
   }
-  return await Promise.all(
-    loans.map(async (loan) => {
-      const saleTx = loan.transactionId ? await getTransactionById(loan.transactionId) : null;
+
+  const enriched = loans.map((loan) => {
+    const base = {
+      ...loan,
+      shopId: loan.transactionId ? shopIdByTxId.get(loan.transactionId) ?? null : null,
+    };
+    if (includePayments && loanPaymentsByLoanId) {
       return {
-        ...loan,
-        shopId: saleTx?.shopId ?? null,
-        payments: await getLoanPayments(loan.id),
+        ...base,
+        payments: (loanPaymentsByLoanId.get(loan.id) || [])
+          .map(loanPaymentToApi)
+          .sort((a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime()),
       };
-    })
-  );
+    }
+    return base;
+  });
+
+  return { loans: enriched, total };
 }
 
 export async function getLoanById(id) {
-  const loan = (await collectionsBackend.readCollection(COLLECTIONS.loans, [])).find((entry) => entry.id === id);
+  const [rawLoans, rawTransactions, rawPayments] = await Promise.all([
+    collectionsBackend.readCollection(COLLECTIONS.loans, []),
+    collectionsBackend.readCollection(COLLECTIONS.transactions, []),
+    collectionsBackend.readCollection(COLLECTIONS.loanPayments, []),
+  ]);
+  const loan = rawLoans.find((entry) => entry.id === id);
   if (!loan) return null;
-  const tid = loan.transaction_id ?? loan.transactionId;
-  const saleTx = tid ? await getTransactionById(tid) : null;
+  const api = loanToApi(loan);
+  const tid = api.transactionId;
+  const tx = tid ? rawTransactions.find((entry) => entry.id === tid) : null;
   return {
-    ...loanToApi(loan),
-    shopId: saleTx?.shopId ?? null,
-    payments: await getLoanPayments(id),
+    ...api,
+    shopId: tx ? tx.shop_id ?? tx.shopId ?? null : null,
+    payments: rawPayments
+      .filter((payment) => (payment.loan_id ?? payment.loanId) === id)
+      .map(loanPaymentToApi)
+      .sort((a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime()),
   };
 }
 
@@ -1885,12 +1934,18 @@ export async function updateLoanStatus(id, status) {
 }
 
 export async function getPaymentJournal({ limit = 200, offset = 0 } = {}) {
-  const allSoas = await collectionsBackend.readCollection(COLLECTIONS.soas, []);
-  const allLoans = await collectionsBackend.readCollection(COLLECTIONS.loans, []);
-  const soaPayments = await collectionsBackend.readCollection(COLLECTIONS.soaPayments, []);
-  const loanPayments = await collectionsBackend.readCollection(COLLECTIONS.loanPayments, []);
+  const [allSoas, allLoans, soaPayments, loanPayments] = await Promise.all([
+    collectionsBackend.readCollection(COLLECTIONS.soas, []),
+    collectionsBackend.readCollection(COLLECTIONS.loans, []),
+    collectionsBackend.readCollection(COLLECTIONS.soaPayments, []),
+    collectionsBackend.readCollection(COLLECTIONS.loanPayments, []),
+  ]);
+
+  const soaById = new Map(allSoas.map((entry) => [entry.id, entry]));
+  const loanById = new Map(allLoans.map((entry) => [entry.id, entry]));
+
   const soaEntries = soaPayments.map((payment) => {
-    const soa = allSoas.find((entry) => entry.id === (payment.soa_id ?? payment.soaId));
+    const soa = soaById.get(payment.soa_id ?? payment.soaId);
     return {
       id: payment.id,
       type: 'soa',
@@ -1907,7 +1962,7 @@ export async function getPaymentJournal({ limit = 200, offset = 0 } = {}) {
   });
 
   const loanEntries = loanPayments.map((payment) => {
-    const loan = allLoans.find((entry) => entry.id === (payment.loan_id ?? payment.loanId));
+    const loan = loanById.get(payment.loan_id ?? payment.loanId);
     return {
       id: payment.id,
       type: 'loan',

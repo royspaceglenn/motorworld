@@ -104,7 +104,7 @@ export const LoanManagementView: React.FC<LoanManagementViewProps> = ({
     setLoadError(null);
     setUsingTransactionFallback(false);
     loansApi
-      .list({ status: statusFilter || undefined, customerName: customerFilter || undefined })
+      .list({ status: statusFilter || undefined, customerName: customerFilter || undefined, limit: 500 })
       .then((res) => {
         setLoans(res.loans);
         setTotal(res.total ?? res.loans.length);

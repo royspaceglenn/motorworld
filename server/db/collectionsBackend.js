@@ -244,7 +244,9 @@ export async function readCollectionRaw(name) {
   }
 }
 
-export async function readCollection(name, fallback = []) {
+const inflightReads = new Map();
+
+async function loadCollectionPayload(name, fallback) {
   if (isEmergencyDbBypass()) {
     return structuredClone(fallback);
   }
@@ -259,6 +261,20 @@ export async function readCollection(name, fallback = []) {
   } catch {
     await upsertCollection(name, fallback);
     return structuredClone(fallback);
+  }
+}
+
+/** Deduplicate concurrent reads of the same collection (avoids repeated JSON.parse under load). */
+export async function readCollection(name, fallback = []) {
+  if (inflightReads.has(name)) {
+    return inflightReads.get(name);
+  }
+  const promise = loadCollectionPayload(name, fallback);
+  inflightReads.set(name, promise);
+  try {
+    return await promise;
+  } finally {
+    inflightReads.delete(name);
   }
 }
 

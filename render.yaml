@@ -18,6 +18,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: NODE_OPTIONS
+        value: "--max-old-space-size=460"
       - key: TRUST_PROXY
         value: "1"
       - key: MOTOR_WORLD_APP_SECRET

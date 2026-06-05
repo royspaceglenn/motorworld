@@ -8,15 +8,16 @@ const router = express.Router();
 
 router.get('/', async (req, res) => {
   try {
-    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : 500;
     const offset = req.query.offset ? Number(req.query.offset) : 0;
-    const loans = await getLoans({
+    const { loans, total } = await getLoans({
       status: req.query.status ? String(req.query.status) : undefined,
       customerName: req.query.customerName ? String(req.query.customerName) : undefined,
       limit,
       offset,
+      includePayments: false,
     });
-    return res.json({ loans, total: loans.length });
+    return res.json({ loans, total });
   } catch (error) {
     const msg = error?.message || 'Failed to load receivable accounts.';
     return res.status(500).json({ error: msg });
