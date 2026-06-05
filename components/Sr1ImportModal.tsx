@@ -24,6 +24,12 @@ function money(n: number) {
   return `₱${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function formatError(e: unknown, fallback: string): string {
+  if (e instanceof Error && e.message.trim()) return e.message.trim();
+  if (typeof e === 'string' && e.trim()) return e.trim();
+  return fallback;
+}
+
 export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose, onImported }) => {
   const [step, setStep] = useState<ImportStep>('upload');
   const [fileName, setFileName] = useState('');
@@ -65,7 +71,7 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
       setParsed(res);
       setStep('review');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to read PDF.');
+      setError(formatError(e, 'Failed to read PDF. Try SR-1.pdf from Motor World exports.'));
     } finally {
       setBusy(false);
     }
@@ -95,7 +101,7 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
       setStep('done');
       onImported();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Import failed.');
+      setError(formatError(e, 'Import failed. Check that the API server is running and try again.'));
     } finally {
       setBusy(false);
     }
@@ -128,11 +134,7 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 sm:px-6">
-          {error && (
-            <InlineAlert variant="error" className="mb-4">
-              {error}
-            </InlineAlert>
-          )}
+          {error && <InlineAlert message={error} variant="error" className="mb-4" />}
 
           {step === 'upload' && (
             <div className="space-y-4">
@@ -201,14 +203,17 @@ export const Sr1ImportModal: React.FC<Sr1ImportModalProps> = ({ isOpen, onClose,
               </label>
 
               {(parsed.warnings.length > 0 || parsed.parseErrors.length > 0) && (
-                <InlineAlert variant="warning">
-                  {parsed.parseErrors.length > 0 && (
-                    <p>{parsed.parseErrors.length} row(s) could not be parsed and were skipped.</p>
-                  )}
-                  {parsed.warnings.slice(0, 3).map((w) => (
-                    <p key={w}>{w}</p>
-                  ))}
-                </InlineAlert>
+                <InlineAlert
+                  variant="info"
+                  message={[
+                    parsed.parseErrors.length > 0
+                      ? `${parsed.parseErrors.length} row(s) could not be parsed and were skipped.`
+                      : '',
+                    ...parsed.warnings.slice(0, 3),
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                />
               )}
 
               <div className="overflow-x-auto rounded-lg border border-slate-200">

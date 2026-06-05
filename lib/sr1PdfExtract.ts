@@ -1,15 +1,35 @@
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+
+function formatPdfError(e: unknown): string {
+  if (e instanceof Error && e.message) return e.message;
+  if (typeof e === 'string' && e.trim()) return e.trim();
+  return 'Could not read the PDF file.';
+}
+
 /** Extract plain text from a PDF file in the browser (for SR-1 import). */
 export async function extractTextFromPdfFile(file: File): Promise<string> {
-  const pdfjs = await import('pdfjs-dist');
-  if (typeof window !== 'undefined') {
-    pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-      'pdfjs-dist/build/pdf.worker.min.mjs',
-      import.meta.url
-    ).toString();
+  if (!file || file.size === 0) {
+    throw new Error('The selected file is empty.');
+  }
+  if (!/\.pdf$/i.test(file.name) && file.type && file.type !== 'application/pdf') {
+    throw new Error('Please choose a PDF file (SR-1 sales register).');
+  }
+
+  let pdfjs;
+  try {
+    pdfjs = await import('pdfjs-dist');
+    pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+  } catch (e) {
+    throw new Error(`PDF reader failed to load: ${formatPdfError(e)}`);
   }
 
   const data = new Uint8Array(await file.arrayBuffer());
-  const doc = await pdfjs.getDocument({ data }).promise;
+  let doc;
+  try {
+    doc = await pdfjs.getDocument({ data }).promise;
+  } catch (e) {
+    throw new Error(`Could not open PDF: ${formatPdfError(e)}`);
+  }
   const pages: string[] = [];
   for (let i = 1; i <= doc.numPages; i++) {
     const page = await doc.getPage(i);
