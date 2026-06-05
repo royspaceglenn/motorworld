@@ -7,7 +7,7 @@ import {
 } from '../lib/inventoryPriceListImport';
 import { Button } from './ui/Button';
 import { InlineAlert } from './ui/InlineAlert';
-import { X, Upload, FileSpreadsheet, Loader2, Trash2, Pencil, CheckCircle2 } from 'lucide-react';
+import { FileSpreadsheet, Loader2, Trash2, Pencil, CheckCircle2 } from 'lucide-react';
 
 interface InventoryImportModalProps {
   isOpen: boolean;
@@ -41,6 +41,12 @@ function validateRows(rows: InventoryPriceListRow[]): string[] {
   return issues;
 }
 
+function stepBadgeClass(active: boolean, complete: boolean): string {
+  if (active) return 'bg-indigo-600 text-white';
+  if (complete) return 'bg-emerald-100 text-emerald-800';
+  return 'bg-slate-200 text-slate-500';
+}
+
 const inputCls =
   'w-full min-w-0 rounded border border-slate-200 bg-white px-1.5 py-1 text-xs text-slate-900 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400';
 
@@ -71,6 +77,12 @@ export const InventoryImportModal: React.FC<InventoryImportModalProps> = ({
     setSheetName('');
     setError(null);
     setResult(null);
+    setMode('upsert');
+  };
+
+  const finishAndClose = () => {
+    reset();
+    onClose();
   };
 
   const updateRow = (index: number, patch: Partial<InventoryPriceListRow>) => {
@@ -95,6 +107,7 @@ export const InventoryImportModal: React.FC<InventoryImportModalProps> = ({
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
+    if (step === 'done') return;
     setBusy(true);
     setError(null);
     setResult(null);
@@ -117,7 +130,7 @@ export const InventoryImportModal: React.FC<InventoryImportModalProps> = ({
   };
 
   const handleImport = async () => {
-    if (!rows.length) return;
+    if (step !== 'review' || !rows.length) return;
     if (validationIssues.length) {
       setError('Fix the highlighted issues before applying to inventory.');
       return;
@@ -155,54 +168,42 @@ export const InventoryImportModal: React.FC<InventoryImportModalProps> = ({
     }
   };
 
+  const uploadComplete = step === 'review' || step === 'done';
+  const reviewComplete = step === 'done';
+
   return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40 p-4">
+    <div
+      className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40 p-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) e.preventDefault();
+      }}
+    >
       <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
         <div className="flex shrink-0 items-center justify-between border-b border-slate-100 bg-slate-50 px-6 py-4">
           <div>
             <h2 className="text-lg font-bold text-slate-800">Import inventory price list</h2>
             <p className="text-sm text-slate-500">
-              Upload Excel → review and edit every row → apply to inventory when ready
+              Complete each step in order. The dialog stays open until you click <strong>Done</strong> on step 3.
             </p>
-            <div className="mt-2 flex flex-wrap gap-2 text-xs">
-              <span
-                className={`rounded-full px-2.5 py-0.5 font-medium ${
-                  step === 'upload' ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'
-                }`}
-              >
-                1. Upload
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+              <span className={`rounded-full px-2.5 py-0.5 font-medium ${stepBadgeClass(step === 'upload', uploadComplete)}`}>
+                1. Upload {uploadComplete ? '✓' : ''}
               </span>
-              <span
-                className={`rounded-full px-2.5 py-0.5 font-medium ${
-                  step === 'review' ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'
-                }`}
-              >
-                2. Review &amp; edit
+              <span className="text-slate-300">→</span>
+              <span className={`rounded-full px-2.5 py-0.5 font-medium ${stepBadgeClass(step === 'review', reviewComplete)}`}>
+                2. Review &amp; edit {reviewComplete ? '✓' : ''}
               </span>
-              <span
-                className={`rounded-full px-2.5 py-0.5 font-medium ${
-                  step === 'done' ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-600'
-                }`}
-              >
+              <span className="text-slate-300">→</span>
+              <span className={`rounded-full px-2.5 py-0.5 font-medium ${stepBadgeClass(step === 'done', false)}`}>
                 3. Done
               </span>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              reset();
-              onClose();
-            }}
-            className="text-slate-400 hover:text-slate-600"
-          >
-            <X className="h-5 w-5" />
-          </button>
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto p-6">
           {error && <InlineAlert message={error} />}
-          {result && <InlineAlert message={result} variant="success" />}
+          {result && step === 'done' && <InlineAlert message={result} variant="success" />}
 
           {step === 'upload' && (
             <>
@@ -224,20 +225,14 @@ export const InventoryImportModal: React.FC<InventoryImportModalProps> = ({
                 <p className="text-sm text-slate-700">
                   <strong>{fileName}</strong>
                   {sheetName ? ` · “${sheetName}”` : ''} —{' '}
-                  <span className="font-semibold text-indigo-700">{rows.length} item(s)</span> to review
+                  <span className="font-semibold text-indigo-700">{rows.length} item(s)</span>
+                  {step === 'done' ? ' applied' : ' to review'}
                 </p>
-                {step === 'review' && (
-                  <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium text-indigo-700 underline-offset-2 hover:underline">
-                    <FileSpreadsheet className="h-3.5 w-3.5" />
-                    Upload different file
-                    <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFile} disabled={busy} />
-                  </label>
-                )}
               </div>
 
               {step === 'review' && (
-                <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 px-3 py-2 text-sm text-indigo-900 flex items-start gap-2">
-                  <Pencil className="h-4 w-4 shrink-0 mt-0.5" />
+                <div className="flex items-start gap-2 rounded-lg border border-indigo-100 bg-indigo-50/50 px-3 py-2 text-sm text-indigo-900">
+                  <Pencil className="mt-0.5 h-4 w-4 shrink-0" />
                   <span>
                     Edit any cell below before applying. Remove wrong rows with the trash icon. Nothing is saved to
                     inventory until you click <strong>Apply to inventory</strong>.
@@ -245,12 +240,21 @@ export const InventoryImportModal: React.FC<InventoryImportModalProps> = ({
                 </div>
               )}
 
+              {step === 'done' && (
+                <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    Import finished. Review the summary above, then click <strong>Done</strong> to close this window.
+                  </span>
+                </div>
+              )}
+
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
                   If item code already exists in inventory
                 </p>
                 <div className="flex flex-wrap gap-4 text-sm">
-                  <label className="flex items-center gap-2 cursor-pointer">
+                  <label className="flex cursor-pointer items-center gap-2">
                     <input
                       type="radio"
                       name="importMode"
@@ -260,7 +264,7 @@ export const InventoryImportModal: React.FC<InventoryImportModalProps> = ({
                     />
                     Update prices &amp; stock
                   </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
+                  <label className="flex cursor-pointer items-center gap-2">
                     <input
                       type="radio"
                       name="importMode"
@@ -274,7 +278,7 @@ export const InventoryImportModal: React.FC<InventoryImportModalProps> = ({
               </div>
 
               {validationIssues.length > 0 && step === 'review' && (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 max-h-32 overflow-y-auto">
+                <div className="max-h-32 overflow-y-auto rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
                   {validationIssues.map((issue) => (
                     <div key={issue}>{issue}</div>
                   ))}
@@ -282,27 +286,27 @@ export const InventoryImportModal: React.FC<InventoryImportModalProps> = ({
               )}
 
               {warnings.length > 0 && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 max-h-28 overflow-y-auto">
+                <div className="max-h-28 overflow-y-auto rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                   {warnings.map((w) => (
                     <div key={w}>{w}</div>
                   ))}
                 </div>
               )}
 
-              <div className="overflow-x-auto rounded-lg border border-slate-200 max-h-[50vh] overflow-y-auto">
-                <table className="w-full text-left text-sm border-collapse">
-                  <thead className="bg-slate-50 text-[10px] uppercase text-slate-500 sticky top-0 z-10">
+              <div className="max-h-[50vh] overflow-x-auto overflow-y-auto rounded-lg border border-slate-200">
+                <table className="w-full border-collapse text-left text-sm">
+                  <thead className="sticky top-0 z-10 bg-slate-50 text-[10px] uppercase text-slate-500">
                     <tr>
-                      <th className="px-2 py-2 w-8">#</th>
-                      <th className="px-2 py-2 min-w-[72px]">Code</th>
-                      <th className="px-2 py-2 min-w-[100px]">Type</th>
-                      <th className="px-2 py-2 min-w-[180px]">Product</th>
-                      <th className="px-2 py-2 min-w-[72px]">Brand</th>
-                      <th className="px-2 py-2 min-w-[64px]">UOM</th>
-                      <th className="px-2 py-2 min-w-[56px] text-right">Qty</th>
-                      <th className="px-2 py-2 min-w-[80px] text-right">Cost</th>
-                      <th className="px-2 py-2 min-w-[80px] text-right">SRP</th>
-                      {step === 'review' && <th className="px-2 py-2 w-10" />}
+                      <th className="w-8 px-2 py-2">#</th>
+                      <th className="min-w-[72px] px-2 py-2">Code</th>
+                      <th className="min-w-[100px] px-2 py-2">Type</th>
+                      <th className="min-w-[180px] px-2 py-2">Product</th>
+                      <th className="min-w-[72px] px-2 py-2">Brand</th>
+                      <th className="min-w-[64px] px-2 py-2">UOM</th>
+                      <th className="min-w-[56px] px-2 py-2 text-right">Qty</th>
+                      <th className="min-w-[80px] px-2 py-2 text-right">Cost</th>
+                      <th className="min-w-[80px] px-2 py-2 text-right">SRP</th>
+                      {step === 'review' && <th className="w-10 px-2 py-2" />}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -313,7 +317,7 @@ export const InventoryImportModal: React.FC<InventoryImportModalProps> = ({
                           key={rowKey(r, index)}
                           className={rowInvalid && step === 'review' ? 'bg-red-50/60' : 'hover:bg-slate-50/80'}
                         >
-                          <td className="px-2 py-1.5 text-xs text-slate-400 tabular-nums">
+                          <td className="px-2 py-1.5 text-xs tabular-nums text-slate-400">
                             {r.sourceRow ?? index + 1}
                           </td>
                           {step === 'review' ? (
@@ -417,8 +421,10 @@ export const InventoryImportModal: React.FC<InventoryImportModalProps> = ({
                     })}
                   </tbody>
                 </table>
-                {rows.length === 0 && (
-                  <p className="px-4 py-8 text-center text-sm text-slate-500">All rows removed. Upload a file again.</p>
+                {rows.length === 0 && step === 'review' && (
+                  <p className="px-4 py-8 text-center text-sm text-slate-500">
+                    All rows removed. Use Back to upload a file again.
+                  </p>
                 )}
               </div>
             </>
@@ -426,62 +432,55 @@ export const InventoryImportModal: React.FC<InventoryImportModalProps> = ({
         </div>
 
         <div className="flex shrink-0 gap-2 border-t border-slate-100 bg-slate-50 px-6 py-4">
-          {step === 'review' && (
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                setStep('upload');
-                setRows([]);
-                setFileName('');
-              }}
-              disabled={busy}
-            >
-              Back
-            </Button>
+          {step === 'upload' && (
+            <>
+              <Button type="button" variant="secondary" fullWidth onClick={finishAndClose} disabled={busy}>
+                Cancel
+              </Button>
+            </>
           )}
-          <Button
-            type="button"
-            variant="secondary"
-            fullWidth
-            onClick={() => {
-              reset();
-              onClose();
-            }}
-            disabled={busy}
-          >
-            {step === 'done' ? 'Close' : 'Cancel'}
-          </Button>
+
           {step === 'review' && (
-            <Button
-              type="button"
-              fullWidth
-              onClick={handleImport}
-              disabled={busy || rows.length === 0 || validationIssues.length > 0}
-              className="bg-emerald-600 hover:bg-emerald-700"
-            >
-              {busy ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Applying…
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="h-4 w-4" />
-                  Apply {rows.length} item(s) to inventory
-                </>
-              )}
-            </Button>
+            <>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setStep('upload');
+                  setRows([]);
+                  setFileName('');
+                  setSheetName('');
+                  setWarnings([]);
+                  setError(null);
+                }}
+                disabled={busy}
+              >
+                Back
+              </Button>
+              <Button
+                type="button"
+                fullWidth
+                onClick={handleImport}
+                disabled={busy || rows.length === 0 || validationIssues.length > 0}
+                className="bg-emerald-600 hover:bg-emerald-700"
+              >
+                {busy ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Applying…
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="h-4 w-4" />
+                    Apply {rows.length} item(s) to inventory
+                  </>
+                )}
+              </Button>
+            </>
           )}
+
           {step === 'done' && (
-            <Button
-              type="button"
-              fullWidth
-              onClick={() => {
-                reset();
-                onClose();
-              }}
-            >
+            <Button type="button" fullWidth onClick={finishAndClose}>
               Done
             </Button>
           )}

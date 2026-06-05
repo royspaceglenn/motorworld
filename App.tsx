@@ -1484,7 +1484,7 @@ const App: React.FC = () => {
           </div>
         )}
         {view === 'inventory' && (
-           <div className="animate-fade-in">
+           <div className="animate-fade-in min-w-0">
              {inventoryFeedback && (
                <div className="mb-4">
                  <InlineAlert
@@ -1726,7 +1726,6 @@ const App: React.FC = () => {
         onImported={(importedItems) => {
           setItems(importedItems.map((i) => normalizeItem(i)));
           fetchItemsAndTransactions();
-          setIsImportModalOpen(false);
         }}
       />
 
